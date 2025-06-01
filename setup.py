@@ -180,15 +180,96 @@ def run_benchmarks():
         if not os.path.exists(benchmark_script):
             print(f"Ошибка: Файл {benchmark_script} не найден")
             return False
-            
+
+        # Создаем один экземпляр консоли
+        console = Console()
+        
         # Запускаем скрипт с текущей директорией как корнем проекта
-        if not run_command(f'python "{benchmark_script}" --root-dir "{current_dir}"'):
-            return False
+        process = subprocess.Popen(
+            f'python "{benchmark_script}" --root-dir "{current_dir}"',
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+            refresh_per_second=10,
+            expand=True
+        ) as progress:
+            # Создаем задачу для общего прогресса
+            task = progress.add_task("[cyan]Подготовка к запуску бенчмарков...", total=100)
             
-        return True
+            # Читаем вывод процесса и обновляем прогресс
+            while True:
+                try:
+                    output = process.stdout.readline()
+                    process.stdout.flush()
+                    
+                    if output == '' and process.poll() is not None:
+                        break
+                        
+                    if output:
+                        output = output.strip()
+                        # Выводим дебаг-сообщения
+                        if "[DEBUG]" in output:
+                            console.print(f"[dim]{output}[/dim]")
+                        # Обновляем прогресс и описание на основе вывода
+                        elif "Starting benchmark" in output:
+                            algo_name = output.split("Starting benchmark")[-1].strip()
+                            progress.update(task, description=f"[cyan]Тестирование {algo_name}...")
+                            progress.update(task, advance=10)
+                        elif "Running test" in output:
+                            test_num = output.split("Running test")[-1].strip()
+                            progress.update(task, description=f"[cyan]Выполнение теста {test_num}...")
+                            progress.update(task, advance=5)
+                        elif "Test completed" in output:
+                            progress.update(task, advance=5)
+                        elif "Benchmark completed" in output:
+                            progress.update(task, description="[cyan]Завершение тестирования...")
+                            progress.update(task, advance=10)
+                        elif "Generating report" in output:
+                            progress.update(task, description="[cyan]Генерация отчета...")
+                            progress.update(task, advance=10)
+                        elif "Report generated" in output:
+                            progress.update(task, description="[cyan]Отчет сгенерирован")
+                            progress.update(task, advance=10)
+                        elif "Finalizing" in output:
+                            progress.update(task, description="[cyan]Завершение работы...")
+                            progress.update(task, advance=10)
+                except UnicodeDecodeError:
+                    continue
+            
+            # Проверяем результат выполнения
+            if process.returncode != 0:
+                try:
+                    error = process.stderr.read()
+                    console.print(f"[red]Ошибка при выполнении бенчмарков:[/red]\n{error}")
+                except UnicodeDecodeError:
+                    console.print("[red]Ошибка при выполнении бенчмарков (не удалось прочитать детали ошибки)[/red]")
+                return False
+            
+            # Завершаем прогресс
+            progress.update(task, description="[green]Бенчмарки успешно завершены!")
+            progress.update(task, completed=100)
+            
+            # Выводим финальное сообщение
+            console.print("[green]✓ Бенчмарки успешно завершены![/green]")
+            console.print("[green]Результаты сохранены в папке 'results'[/green]")
+            return True
         
     except Exception as e:
-        print(f"Ошибка при запуске бенчмарков: {str(e)}")
+        console.print(f"[red]Ошибка при запуске бенчмарков:[/red] {str(e)}")
         return False
 
 def uninstall_project():
