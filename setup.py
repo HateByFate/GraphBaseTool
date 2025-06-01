@@ -164,15 +164,22 @@ def run_benchmarks():
     print_step("Запуск бенчмарков")
     
     try:
-        # Проверяем наличие файла boost_benchmark.exe
-        boost_benchmark_path = os.path.join("build", "bin", "Release", "boost_benchmark.exe")
-        if not os.path.exists(boost_benchmark_path):
-            print(f"Ошибка: Файл boost_benchmark.exe не найден по пути: {boost_benchmark_path}")
-            print("Сначала соберите проект с помощью CMake")
-            return False
+        # Получаем текущую директорию
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Создаем папку results, если её нет
+        results_dir = os.path.join(current_dir, "results")
+        if not os.path.exists(results_dir):
+            os.makedirs(results_dir)
             
         # Запускаем бенчмарки через Python скрипт
-        if not run_command("python benchmarks/run_benchmarks.py"):
+        benchmark_script = os.path.join(current_dir, "benchmarks", "run_benchmarks.py")
+        if not os.path.exists(benchmark_script):
+            print(f"Ошибка: Файл {benchmark_script} не найден")
+            return False
+            
+        # Запускаем скрипт с текущей директорией как корнем проекта
+        if not run_command(f'python "{benchmark_script}" --root-dir "{current_dir}"'):
             return False
             
         print("\n=== Бенчмарки успешно завершены! ===")
@@ -193,8 +200,9 @@ def uninstall_project():
         # Получаем путь к текущей директории
         current_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # Список файлов и папок для удаления
+        # Список файлов и папок для удаления (в порядке удаления)
         items_to_remove = [
+            # Сначала удаляем сгенерированные файлы и папки
             'build',
             'results',
             'vcpkg',
@@ -210,11 +218,14 @@ def uninstall_project():
             'GraphBaseTool.vcxproj.filters',
             'GraphBaseTool.vcxproj.user',
             'GraphBaseTool.exe',
+            
+            # Затем удаляем исходные файлы
             'graph.cpp',
             'graph.h',
             'main.cpp',
             'run_benchmarks.ps1',
-            'setup.py',
+            
+            # В конце удаляем системные файлы
             '.git',
             '.gitignore'
         ]
@@ -223,15 +234,32 @@ def uninstall_project():
         for item in items_to_remove:
             item_path = os.path.join(current_dir, item)
             if os.path.exists(item_path):
-                if os.path.isfile(item_path):
-                    os.remove(item_path)
-                    print(f"Удален файл: {item}")
-                elif os.path.isdir(item_path):
-                    shutil.rmtree(item_path)
-                    print(f"Удалена папка: {item}")
+                try:
+                    if os.path.isfile(item_path):
+                        os.remove(item_path)
+                        print(f"Удален файл: {item}")
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                        print(f"Удалена папка: {item}")
+                except Exception as e:
+                    print(f"Предупреждение: Не удалось удалить {item}: {str(e)}")
         
         print("\nПроект успешно удален!")
         time.sleep(2)
+        
+        # В самом конце удаляем setup.py и его директорию
+        try:
+            # Получаем путь к родительской директории
+            parent_dir = os.path.dirname(current_dir)
+            # Удаляем setup.py
+            os.remove(__file__)
+            print("Удален файл: setup.py")
+            # Удаляем родительскую директорию, если она пуста
+            if not os.listdir(current_dir):
+                os.rmdir(current_dir)
+                print(f"Удалена директория: {os.path.basename(current_dir)}")
+        except Exception as e:
+            print(f"Предупреждение: Не удалось удалить setup.py: {str(e)}")
         
         # Закрываем окно PowerShell
         if os.name == 'nt':
@@ -273,16 +301,30 @@ def update():
         
         # Проверяем, есть ли локальные изменения
         if repo.is_dirty():
-            print("Обнаружены локальные изменения. Сначала сохраните или отмените их.")
-            time.sleep(2)
-            return False
+            print("Обнаружены локальные изменения. Сохраняем их в stash...")
+            repo.git.stash('save', 'Локальные изменения перед обновлением')
+            has_stashed = True
+        else:
+            has_stashed = False
             
         # Получаем текущую ветку
         current_branch = repo.active_branch
         
         print(f"Обновление ветки {current_branch.name}...")
+        # Сбрасываем все локальные изменения
+        repo.git.reset('--hard')
+        # Очищаем неотслеживаемые файлы
+        repo.git.clean('-fd')
         # Обновляем текущую ветку
-        origin.pull(current_branch.name)
+        origin.pull(current_branch.name, force=True)
+        
+        # Если были сохранены локальные изменения, пытаемся их применить
+        if has_stashed:
+            print("Применяем сохраненные локальные изменения...")
+            try:
+                repo.git.stash('pop')
+            except git.GitCommandError:
+                print("Предупреждение: Не удалось применить сохраненные изменения")
         
         print("Пересборка проекта...")
         # Пересобираем проект
@@ -292,6 +334,7 @@ def update():
             return False
         
         print("\nПроект успешно обновлен!")
+        print("Все изменения из GitHub применены")
         time.sleep(2)
         return True
         

@@ -1,244 +1,197 @@
-import subprocess
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from tqdm import tqdm
 import os
 import sys
-import locale
 import json
-from datetime import datetime
+import time
+import subprocess
+import argparse
+from pathlib import Path
+import matplotlib.pyplot as plt
+import numpy as np
+from tqdm import tqdm
+import pandas as pd
+import seaborn as sns
+import locale
 import shutil
 import glob
+from datetime import datetime
 
 # Устанавливаем кодировку для вывода
 sys.stdout.reconfigure(encoding='utf-8')
 plt.rcParams['font.family'] = 'DejaVu Sans'  # Шрифт с поддержкой кириллицы
 
-def find_project_root():
-    current = os.path.abspath(os.getcwd())
-    while True:
-        if os.path.exists(os.path.join(current, "CMakeLists.txt")):
-            print(f"[DEBUG] Найден корень проекта: {current}")
-            return current
-        parent = os.path.dirname(current)
-        if parent == current:
-            raise RuntimeError("Не удалось найти корень проекта (CMakeLists.txt)")
-        current = parent
-
-PROJECT_ROOT = find_project_root()
-RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results')
-
-# Удаляем папку results из benchmarks, если она есть
-benchmarks_results = os.path.join(os.path.dirname(__file__), 'results')
-if os.path.exists(benchmarks_results):
-    print(f"Удаляю лишнюю папку: {benchmarks_results}")
-    shutil.rmtree(benchmarks_results)
-
-print(f"[DEBUG] Папка results будет создана здесь: {RESULTS_DIR}")
-os.makedirs(RESULTS_DIR, exist_ok=True)
-
-def find_performance_test_exe():
-    """Ищет performance_test.exe во всех подкаталогах build."""
-    for root, dirs, files in os.walk(os.path.join(PROJECT_ROOT, 'build')):
-        for file in files:
-            if file == 'performance_test.exe':
-                return os.path.join(root, file)
+def find_executable(name, root_dir):
+    """Ищет исполняемый файл в различных возможных местах."""
+    possible_paths = [
+        os.path.join(root_dir, "build", "bin", "Release", name),
+        os.path.join(root_dir, "build", "Release", name),
+        os.path.join(root_dir, "build", name),
+        os.path.join(root_dir, name)
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
     return None
 
-def run_benchmark(script_name):
-    print(f"\nЗапуск бенчмарка для {script_name}...")
-    try:
-        # Если это python-скрипт
-        if script_name.endswith('.py'):
-            script_path = os.path.join('benchmarks', script_name)
-            result = subprocess.run(
-                ['python', script_path],
-                capture_output=True,
-                text=True,
-                encoding=locale.getpreferredencoding(False),
-                errors='replace'
-            )
-        # Если это boost_benchmark.cpp
-        elif script_name == 'boost_benchmark.cpp':
-            exe_path = os.path.join('benchmarks', 'build', 'Release', 'boost_benchmark.exe')
-            if not os.path.exists(exe_path):
-                raise FileNotFoundError(f"Не найден {exe_path}. Сначала соберите проект.")
-            result = subprocess.run([exe_path],
-                                  capture_output=True,
-                                  text=True,
-                                  encoding='utf-8')
-        # Если это GraphBaseTool (или другой внешний exe)
-        elif script_name == os.path.join(PROJECT_ROOT, 'build', 'Release', 'performance_test.exe'):
-            exe_path = os.path.normpath(script_name)
-            if not os.path.exists(exe_path):
-                raise FileNotFoundError(f"Не найден {exe_path}. Сначала соберите проект.")
-            result = subprocess.run([exe_path],
-                                  capture_output=True,
-                                  text=True,
-                                  encoding='utf-8')
-        else:
-            # Для других возможных C++ бенчмарков
-            exe_path = os.path.join('benchmarks', script_name.replace('.cpp', '.exe'))
-            if not os.path.exists(exe_path):
-                raise FileNotFoundError(f"Не найден {exe_path}. Сначала соберите проект.")
-            result = subprocess.run([exe_path],
-                                  capture_output=True,
-                                  text=True,
-                                  encoding='utf-8')
-        if result.stdout:
-            return result.stdout
-        else:
-            print(f"Предупреждение: нет вывода от {script_name}")
-            return ""
-    except Exception as e:
-        print(f"Ошибка при выполнении {script_name}: {str(e)}")
-        return ""
-
-def parse_results(output):
-    if not output:
-        return []
+def run_benchmark(script_path, root_dir):
+    """Запускает бенчмарк и возвращает его результаты."""
+    print(f"Запуск бенчмарка для {script_path}...")
     
+    # Определяем тип бенчмарка
+    if script_path.endswith('.cpp'):
+        # Для C++ бенчмарков ищем исполняемый файл
+        exe_name = os.path.splitext(os.path.basename(script_path))[0] + '.exe'
+        exe_path = find_executable(exe_name, root_dir)
+        if not exe_path:
+            print(f"Ошибка при выполнении {script_path}: Не найден {exe_name}. Сначала соберите проект.")
+            return None
+        cmd = f'"{exe_path}"'
+    else:
+        # Для Python скриптов
+        cmd = f'python "{script_path}"'
+    
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Ошибка при выполнении {script_path}: {result.stderr}")
+            return None
+        return result.stdout
+    except Exception as e:
+        print(f"Ошибка при выполнении {script_path}: {str(e)}")
+        return None
+
+def main():
+    parser = argparse.ArgumentParser(description='Запуск бенчмарков')
+    parser.add_argument('--root-dir', type=str, help='Корневая директория проекта')
+    args = parser.parse_args()
+    
+    # Определяем корневую директорию
+    root_dir = args.root_dir if args.root_dir else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    print(f"[DEBUG] Найден корень проекта: {root_dir}")
+    
+    # Создаем директорию для результатов
+    results_dir = os.path.join(root_dir, "results")
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+    print(f"[DEBUG] Папка results будет создана здесь: {results_dir}")
+    
+    # Список бенчмарков
+    benchmarks = [
+        os.path.join(root_dir, "benchmarks", "networkx_benchmark.py"),
+        os.path.join(root_dir, "benchmarks", "igraph_benchmark.py"),
+        os.path.join(root_dir, "benchmarks", "boost_benchmark.cpp"),
+        os.path.join(root_dir, "build", "bin", "Release", "performance_test.exe")
+    ]
+    
+    # Запускаем бенчмарки
     results = []
+    for script in tqdm(benchmarks, desc="Выполнение бенчмарков"):
+        output = run_benchmark(script, root_dir)
+        if output:
+            try:
+                # Парсим JSON из вывода
+                for line in output.strip().split('\n'):
+                    if line.strip():
+                        result = json.loads(line)
+                        results.append(result)
+            except json.JSONDecodeError as e:
+                print(f"Ошибка при парсинге результатов {script}: {str(e)}")
     
-    for line in output.split('\n'):
-        try:
-            if line.strip().startswith('{'):
-                result = json.loads(line)
-                results.append(result)
-        except json.JSONDecodeError:
-            continue
-        except Exception as e:
-            print(f"Ошибка при разборе строки: {line}")
-            print(f"Ошибка: {str(e)}")
-            continue
-    
-    return results
-
-def create_markdown_report(results, output_file):
-    """Создает markdown отчет с результатами бенчмарков"""
-    try:
-        # Создаем директорию, если она не существует
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
-            # Заголовок
-            f.write(f"# Результаты бенчмарков\n\n")
-            f.write(f"Дата выполнения: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            
-            if not results:
-                f.write("Нет данных для отображения\n")
-                return
-            
-            # Словарь для перевода операций на русский язык
-            operation_translations = {
-                "graph_creation": "Создание графа",
-                "dijkstra": "Алгоритм Дейкстры",
-                "floyd_warshall": "Алгоритм Флойда-Уоршелла"
-            }
-            
-            # Определяем порядок операций
-            operation_order = ["graph_creation", "dijkstra", "floyd_warshall"]
-            
-            # Сортируем результаты по операции, размеру графа и времени выполнения
-            sorted_results = sorted(results, key=lambda x: (x['operation'], x['size'], x['time_ms']))
-            
-            # Фиксированная ширина столбцов
-            column_widths = {
-                'library': 15,  # Библиотека
-                'size': 12,     # Число вершин
-                'edges': 12,    # Число рёбер
-                'time': 12,     # Время (мс)
-                'memory': 12    # Память (МБ)
-            }
-            
-            # Выводим таблицы для каждой операции в заданном порядке
-            for operation in operation_order:
-                operation_results = [r for r in sorted_results if r['operation'] == operation]
-                if not operation_results:
-                    continue
-                    
-                f.write(f"## {operation_translations.get(operation, operation)}\n\n")
-                
-                # Выводим таблицы для каждого размера графа
-                for size in sorted(set(r['size'] for r in operation_results)):
-                    f.write(f"### Размер {size} вершин\n\n")
-                    size_results = [r for r in operation_results if r['size'] == size]
-                    
-                    # Создаем заголовок таблицы с фиксированной шириной
-                    f.write("| " + "Библиотека".ljust(column_widths['library']) + " | " +
-                           "Число вершин".ljust(column_widths['size']) + " | " +
-                           "Число рёбер".ljust(column_widths['edges']) + " | " +
-                           "Время (мс)".ljust(column_widths['time']) + " | " +
-                           "Память (МБ)".ljust(column_widths['memory']) + " |\n")
-                    
-                    # Создаем разделитель
-                    f.write("|" + "-" * (column_widths['library'] + 2) + "|" +
-                           "-" * (column_widths['size'] + 2) + "|" +
-                           "-" * (column_widths['edges'] + 2) + "|" +
-                           "-" * (column_widths['time'] + 2) + "|" +
-                           "-" * (column_widths['memory'] + 2) + "|\n")
-                    
-                    # Заполняем таблицу данными
-                    for result in size_results:
-                        f.write("| " + str(result['library']).ljust(column_widths['library']) + " | " +
-                               str(result['size']).ljust(column_widths['size']) + " | " +
-                               str(result['edges']).ljust(column_widths['edges']) + " | " +
-                               f"{result['time_ms']:.2f}".ljust(column_widths['time']) + " | " +
-                               f"{result['memory_mb']:.2f}".ljust(column_widths['memory']) + " |\n")
-                    
-                    f.write("\n")
-    except Exception as e:
-        print(f"Ошибка при создании отчета: {str(e)}")
-
-def plot_results(results, metric, title, filename):
     if not results:
-        print(f"Нет данных для создания графика {filename}")
+        print("Нет результатов для анализа")
         return
+    
+    # Сохраняем результаты
+    results_file = os.path.join(results_dir, "benchmark_results.json")
+    with open(results_file, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2)
+    
+    # Создаем графики
+    create_plots(results, results_dir)
+    
+    # Создаем отчет
+    create_report(results, results_dir)
+    
+    print("\nБенчмарки завершены!")
+    print("Результаты сохранены в директории 'results':")
+    print(f"- {results_file}")
+    print(f"- {os.path.join(results_dir, 'benchmark_time_ms.png')}")
+    print(f"- {os.path.join(results_dir, 'benchmark_memory_mb.png')}")
+    print(f"- {os.path.join(results_dir, 'benchmark_results.md')}")
+
+def create_plots(results, results_dir):
+    """Создает графики на основе результатов."""
+    # Группируем результаты по операциям
+    operations = {}
+    for result in results:
+        op = result['operation']
+        if op not in operations:
+            operations[op] = []
+        operations[op].append(result)
+    
+    # Создаем график времени выполнения
+    plt.figure(figsize=(12, 6))
+    for op, data in operations.items():
+        sizes = [d['size'] for d in data]
+        times = [d['time_ms'] for d in data]
+        plt.plot(sizes, times, marker='o', label=op)
+    plt.xlabel('Размер графа')
+    plt.ylabel('Время (мс)')
+    plt.title('Время выполнения операций')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(results_dir, 'benchmark_time_ms.png'))
+    plt.close()
+    
+    # Создаем график использования памяти
+    plt.figure(figsize=(12, 6))
+    for op, data in operations.items():
+        sizes = [d['size'] for d in data]
+        memory = [d['memory_mb'] for d in data]
+        plt.plot(sizes, memory, marker='o', label=op)
+    plt.xlabel('Размер графа')
+    plt.ylabel('Память (МБ)')
+    plt.title('Использование памяти')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(os.path.join(results_dir, 'benchmark_memory_mb.png'))
+    plt.close()
+
+def create_report(results, results_dir):
+    """Создает отчет в формате Markdown."""
+    # Группируем результаты по операциям
+    operations = {}
+    for result in results:
+        op = result['operation']
+        if op not in operations:
+            operations[op] = []
+        operations[op].append(result)
+    
+    # Создаем отчет
+    report = "# Результаты бенчмарков\n\n"
+    
+    for op, data in operations.items():
+        report += f"## {op}\n\n"
+        report += "| Размер | Время (мс) | Память (МБ) | Рёбра |\n"
+        report += "|--------|------------|-------------|--------|\n"
         
-    try:
-        # Преобразуем результаты в DataFrame для построения графика
-        df = pd.DataFrame(results)
+        for result in sorted(data, key=lambda x: x['size']):
+            report += f"| {result['size']} | {result['time_ms']:.2f} | {result['memory_mb']:.2f} | {result['edges']} |\n"
         
-        plt.figure(figsize=(15, 8))
-        sns.set_style("whitegrid")
-        
-        # Создаем график
-        g = sns.lineplot(data=df, x='size', y=metric, hue='library', style='operation', marker='o')
-        
-        # Настраиваем внешний вид
-        plt.title(title, fontsize=14, pad=20)
-        plt.xlabel('Размер графа', fontsize=12)
-        plt.ylabel(metric.replace('_', ' ').title(), fontsize=12)
-        plt.xticks(rotation=45)
-        
-        # Настраиваем легенду
-        plt.legend(title='Библиотека', bbox_to_anchor=(1.05, 1), loc='upper left')
-        
-        # Добавляем сетку
-        plt.grid(True, linestyle='--', alpha=0.7)
-        
-        # Настраиваем отступы
-        plt.tight_layout()
-        
-        # Создаем директорию, если она не существует
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        
-        # Сохраняем график
-        plt.savefig(filename, dpi=300, bbox_inches='tight')
-        plt.close()
-    except Exception as e:
-        print(f"Ошибка при создании графика {filename}: {str(e)}")
-        print(f"Данные для графика: {results}")
+        report += "\n"
+    
+    # Сохраняем отчет
+    with open(os.path.join(results_dir, 'benchmark_results.md'), 'w', encoding='utf-8') as f:
+        f.write(report)
 
 def cleanup_old_files():
     """Удаляет старые файлы результатов"""
     files_to_remove = [
-        os.path.join(PROJECT_ROOT, 'benchmark_results.csv'),
-        os.path.join(PROJECT_ROOT, 'benchmark_results.md'),
-        os.path.join(PROJECT_ROOT, 'benchmark_time_ms.png'),
-        os.path.join(PROJECT_ROOT, 'benchmark_memory_mb.png'),
-        os.path.join(PROJECT_ROOT, 'run_benchmarks.ps1')
+        os.path.join(root_dir, 'benchmark_results.csv'),
+        os.path.join(root_dir, 'benchmark_results.md'),
+        os.path.join(root_dir, 'benchmark_time_ms.png'),
+        os.path.join(root_dir, 'benchmark_memory_mb.png'),
+        os.path.join(root_dir, 'run_benchmarks.ps1')
     ]
     
     for file in files_to_remove:
@@ -248,67 +201,6 @@ def cleanup_old_files():
                 print(f"Удален файл: {file}")
             except Exception as e:
                 print(f"Ошибка при удалении файла {file}: {str(e)}")
-
-def main():
-    # Список скриптов для бенчмарков
-    scripts = [
-        'networkx_benchmark.py',
-        'igraph_benchmark.py',
-        'boost_benchmark.cpp',
-    ]
-    perf_test_path = find_performance_test_exe()
-    if perf_test_path:
-        scripts.append(perf_test_path)
-    else:
-        print("[WARNING] performance_test.exe не найден в build. Будет пропущен.")
-
-    # Создаем список для хранения результатов
-    all_results = []
-    
-    # Запускаем бенчмарки с прогресс-баром
-    for script in tqdm(scripts, desc="Выполнение бенчмарков"):
-        output = run_benchmark(script)
-        results = parse_results(output)
-        if results:
-            # Определяем название библиотеки
-            if script.endswith('performance_test.exe'):
-                library_name = 'GraphBaseTool'
-            else:
-                library_name = script.replace('_benchmark.py', '').replace('_benchmark.cpp', '')
-            
-            # Добавляем название библиотеки к каждому результату
-            for result in results:
-                result['library'] = library_name
-            
-            all_results.extend(results)
-    
-    if all_results:
-        # Сохраняем результаты в JSON
-        json_path = os.path.join(RESULTS_DIR, 'benchmark_results.json')
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(all_results, f, indent=2, ensure_ascii=False)
-        
-        # Создаем графики
-        plot_results(all_results, 'time_ms', 'Время выполнения алгоритмов', 
-                    os.path.join(RESULTS_DIR, 'benchmark_time_ms.png'))
-        plot_results(all_results, 'memory_mb', 'Использование памяти', 
-                    os.path.join(RESULTS_DIR, 'benchmark_memory_mb.png'))
-        
-        # Создаем markdown отчет
-        md_path = os.path.join(RESULTS_DIR, 'benchmark_results.md')
-        create_markdown_report(all_results, md_path)
-        
-        # Удаляем старые файлы
-        cleanup_old_files()
-        
-        print("\nБенчмарки завершены!")
-        print("Результаты сохранены в директории 'results':")
-        print(f"- {json_path}")
-        print(f"- {os.path.join(RESULTS_DIR, 'benchmark_time_ms.png')}")
-        print(f"- {os.path.join(RESULTS_DIR, 'benchmark_memory_mb.png')}")
-        print(f"- {md_path}")
-    else:
-        print("\nОшибка: не удалось получить результаты бенчмарков")
 
 if __name__ == "__main__":
     main() 
