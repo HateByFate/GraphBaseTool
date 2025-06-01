@@ -195,106 +195,186 @@ def uninstall_project():
     clear_screen()
     console = Console()
     
-    with console.status("[bold red]Удаление проекта...", spinner="dots") as status:
-        try:
-            # Получаем путь к текущей директории
-            current_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        # Получаем путь к текущей директории
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        console.print(f"[blue]Текущая директория: {current_dir}[/blue]")
+        
+        # Список файлов и папок для удаления (в порядке удаления)
+        items_to_remove = [
+            # Сначала удаляем сгенерированные файлы и папки
+            'build',
+            'results',
+            'vcpkg',
+            'CMakeFiles',
+            'CMakeCache.txt',
+            'cmake_install.cmake',
+            'Makefile',
+            'GraphBaseTool.sln',
+            'x64',
+            'Debug',
+            'Release',
+            'GraphBaseTool.vcxproj',
+            'GraphBaseTool.vcxproj.filters',
+            'GraphBaseTool.vcxproj.user',
+            'GraphBaseTool.exe',
             
-            # Список файлов и папок для удаления (в порядке удаления)
-            items_to_remove = [
-                # Сначала удаляем сгенерированные файлы и папки
-                'build',
-                'results',
-                'vcpkg',
-                'CMakeFiles',
-                'CMakeCache.txt',
-                'cmake_install.cmake',
-                'Makefile',
-                'GraphBaseTool.sln',
-                'x64',
-                'Debug',
-                'Release',
-                'GraphBaseTool.vcxproj',
-                'GraphBaseTool.vcxproj.filters',
-                'GraphBaseTool.vcxproj.user',
-                'GraphBaseTool.exe',
-                
-                # Затем удаляем исходные файлы
-                'graph.cpp',
-                'graph.h',
-                'main.cpp',
-                'run_benchmarks.ps1',
-                
-                # В конце удаляем системные файлы
-                '.git',
-                '.gitignore'
-            ]
+            # Затем удаляем исходные файлы и папки
+            'graph.cpp',
+            'graph.h',
+            'main.cpp',
+            'run_benchmarks.ps1',
+            'benchmarks',
+            'tests',
+            'docs',
+            'examples',
+            'include',
+            'src',
+            'lib',
+            'bin',
+            'obj',
+            'packages',
+            'tools',
+            'scripts',
+            'resources',
+            'data',
+            'config',
+            'logs',
+            'temp',
+            'dist',
+            '.vs',
+            '.vscode',
+            '.idea',
+            '*.user',
+            '*.suo',
+            '*.cache',
+            '*.log',
+            '*.tmp',
+            '*.temp',
             
-            # Создаем прогресс-бар
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-                TimeElapsedColumn(),
-                console=console
-            ) as progress:
-                task = progress.add_task("[red]Удаление файлов...", total=len(items_to_remove))
+            # В конце удаляем системные файлы
+            '.git',
+            '.gitignore',
+            'README.md',
+            'LICENSE',
+            'CHANGELOG.md',
+            'CONTRIBUTING.md',
+            'setup.py',
+            'requirements.txt',
+            'package.json',
+            'package-lock.json',
+            'yarn.lock',
+            'tsconfig.json',
+            'webpack.config.js',
+            '.npmrc',
+            '.yarnrc',
+            '.editorconfig',
+            '.eslintrc',
+            '.prettierrc',
+            '.babelrc',
+            'jest.config.js',
+            'karma.conf.js',
+            'tslint.json',
+            '.travis.yml',
+            'appveyor.yml',
+            '.coveralls.yml',
+            '.codecov.yml',
+            '.dockerignore',
+            'Dockerfile',
+            'docker-compose.yml',
+            '.env',
+            '.env.example',
+            '.env.development',
+            '.env.production',
+            '.env.test'
+        ]
+        
+        # Создаем прогресс-бар
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console
+        ) as progress:
+            task = progress.add_task("[red]Удаление файлов...", total=len(items_to_remove))
+            
+            # Удаляем каждый элемент
+            for item in items_to_remove:
+                item_path = os.path.join(current_dir, item)
+                progress.update(task, description=f"[red]Проверка {item}[/red]")
                 
-                # Удаляем каждый элемент
-                for item in items_to_remove:
-                    item_path = os.path.join(current_dir, item)
+                try:
                     if os.path.exists(item_path):
-                        try:
-                            if os.path.isfile(item_path):
+                        progress.update(task, description=f"[green]Удаление {item}[/green]")
+                        if os.path.isfile(item_path):
+                            try:
+                                os.chmod(item_path, 0o777)  # Даем полные права на файл
                                 os.remove(item_path)
-                                console.print(f"[green]✓[/green] Удален файл: {item}")
-                            elif os.path.isdir(item_path):
-                                shutil.rmtree(item_path)
-                                console.print(f"[green]✓[/green] Удалена папка: {item}")
-                        except Exception as e:
-                            console.print(f"[yellow]⚠[/yellow] Не удалось удалить {item}: {str(e)}")
+                                progress.update(task, description=f"[green]Файл {item} удален[/green]")
+                            except PermissionError as pe:
+                                progress.update(task, description=f"[yellow]Нет прав доступа к {item}[/yellow]")
+                            except Exception as e:
+                                progress.update(task, description=f"[yellow]Ошибка при удалении {item}[/yellow]")
+                        elif os.path.isdir(item_path):
+                            try:
+                                shutil.rmtree(item_path, ignore_errors=True)
+                                progress.update(task, description=f"[green]Директория {item} удалена[/green]")
+                            except PermissionError as pe:
+                                progress.update(task, description=f"[yellow]Нет прав доступа к {item}[/yellow]")
+                            except Exception as e:
+                                progress.update(task, description=f"[yellow]Ошибка при удалении {item}[/yellow]")
+                    else:
+                        progress.update(task, description=f"[yellow]{item} не существует[/yellow]")
+                except Exception as e:
+                    progress.update(task, description=f"[red]Ошибка при обработке {item}[/red]")
+                finally:
                     progress.update(task, advance=1)
-                    time.sleep(0.1)  # Небольшая задержка для анимации
+                    time.sleep(0.1)  # Небольшая задержка для отображения прогресса
+        
+        # Удаляем корневую директорию проекта
+        try:
+            # Получаем путь к корневой директории проекта
+            project_dir = current_dir
             
-            console.print("\n[bold green]Проект успешно удален![/bold green]")
-            time.sleep(2)
-            
-            # В самом конце удаляем setup.py и его директорию
-            try:
-                # Получаем путь к родительской директории
-                parent_dir = os.path.dirname(current_dir)
-                # Удаляем setup.py
-                os.remove(__file__)
-                console.print("[green]✓[/green] Удален файл: setup.py")
-                # Удаляем родительскую директорию, если она пуста
-                if not os.listdir(current_dir):
-                    os.rmdir(current_dir)
-                    console.print(f"[green]✓[/green] Удалена директория: {os.path.basename(current_dir)}")
-            except Exception as e:
-                console.print(f"[yellow]⚠[/yellow] Не удалось удалить setup.py: {str(e)}")
-            
-            # Закрываем окно консоли через Win32 API
-            if os.name == 'nt':
-                kernel32 = ctypes.WinDLL('kernel32')
-                user32 = ctypes.WinDLL('user32')
-                hWnd = kernel32.GetConsoleWindow()
-                if hWnd:
-                    # Получаем ID процесса
-                    pid = ctypes.c_ulong()
-                    user32.GetWindowThreadProcessId(hWnd, ctypes.byref(pid))
-                    # Открываем процесс
-                    handle = kernel32.OpenProcess(1, False, pid)
-                    # Завершаем процесс
-                    kernel32.TerminateProcess(handle, 0)
-                    # Закрываем хендл
-                    kernel32.CloseHandle(handle)
-            sys.exit(0)
+            # Проверяем, что мы находимся в директории GraphBaseTool
+            if os.path.basename(project_dir).lower() == 'graphbasetool-main':
+                console.print("[blue]Удаление корневой директории проекта...[/blue]")
+                try:
+                    # Даем полные права на директорию и все её содержимое
+                    for root, dirs, files in os.walk(project_dir, topdown=False):
+                        for name in files:
+                            try:
+                                os.chmod(os.path.join(root, name), 0o777)
+                            except:
+                                pass
+                        for name in dirs:
+                            try:
+                                os.chmod(os.path.join(root, name), 0o777)
+                            except:
+                                pass
+                    os.chmod(project_dir, 0o777)
+                    
+                    # Удаляем директорию и всё её содержимое
+                    shutil.rmtree(project_dir, ignore_errors=True)
+                    console.print("[green]Корневая директория проекта успешно удалена[/green]")
+                except Exception as e:
+                    console.print(f"[red]Ошибка при удалении корневой директории: {str(e)}[/red]")
                 
         except Exception as e:
-            console.print(f"\n[bold red]Ошибка при удалении: {str(e)}[/bold red]")
-            time.sleep(2)
-            return False
+            console.print(f"[yellow]Предупреждение: Не удалось удалить корневую директорию: {str(e)}[/yellow]")
+        
+        console.print("[green]Удаление проекта завершено![/green]")
+        time.sleep(2)
+        show_farewell()
+        
+    except Exception as e:
+        console.print(f"[red]Критическая ошибка при удалении проекта: {str(e)}[/red]")
+        console.print(f"[red]Тип ошибки: {type(e).__name__}[/red]")
+        console.print(f"[red]Детали ошибки: {str(e)}[/red]")
+        time.sleep(3)
+        show_farewell()
 
 def update():
     clear_screen()
