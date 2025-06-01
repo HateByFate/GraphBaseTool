@@ -1,0 +1,13 @@
+networkx>=3.5
+python-igraph>=0.11.8
+# graph-tool нужно устанавливать через conda:
+# conda create -n graph_tool_env python=3.9
+# conda activate graph_tool_env
+# conda config --add channels conda-forge
+# conda install graph-tool
+pandas>=2.0.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+psutil>=5.9.0
+memory_profiler>=0.61.0
+tqdm>=4.67.0 
