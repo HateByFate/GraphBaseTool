@@ -11,6 +11,9 @@ import json
 import time
 from inquirer import themes
 from blessed import Terminal
+import ctypes
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
 
 EYE_LOGO = r"""
 く__,.ヘヽ.　　　　/　,ー､ 〉
@@ -182,8 +185,6 @@ def run_benchmarks():
         if not run_command(f'python "{benchmark_script}" --root-dir "{current_dir}"'):
             return False
             
-        print("\n=== Бенчмарки успешно завершены! ===")
-        print("Результаты сохранены в папке 'results'")
         return True
         
     except Exception as e:
@@ -192,85 +193,108 @@ def run_benchmarks():
 
 def uninstall_project():
     clear_screen()
-    print("\n" + "="*50)
-    print("Удаление проекта".center(50))
-    print("="*50 + "\n")
+    console = Console()
     
-    try:
-        # Получаем путь к текущей директории
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # Список файлов и папок для удаления (в порядке удаления)
-        items_to_remove = [
-            # Сначала удаляем сгенерированные файлы и папки
-            'build',
-            'results',
-            'vcpkg',
-            'CMakeFiles',
-            'CMakeCache.txt',
-            'cmake_install.cmake',
-            'Makefile',
-            'GraphBaseTool.sln',
-            'x64',
-            'Debug',
-            'Release',
-            'GraphBaseTool.vcxproj',
-            'GraphBaseTool.vcxproj.filters',
-            'GraphBaseTool.vcxproj.user',
-            'GraphBaseTool.exe',
-            
-            # Затем удаляем исходные файлы
-            'graph.cpp',
-            'graph.h',
-            'main.cpp',
-            'run_benchmarks.ps1',
-            
-            # В конце удаляем системные файлы
-            '.git',
-            '.gitignore'
-        ]
-        
-        # Удаляем каждый элемент
-        for item in items_to_remove:
-            item_path = os.path.join(current_dir, item)
-            if os.path.exists(item_path):
-                try:
-                    if os.path.isfile(item_path):
-                        os.remove(item_path)
-                        print(f"Удален файл: {item}")
-                    elif os.path.isdir(item_path):
-                        shutil.rmtree(item_path)
-                        print(f"Удалена папка: {item}")
-                except Exception as e:
-                    print(f"Предупреждение: Не удалось удалить {item}: {str(e)}")
-        
-        print("\nПроект успешно удален!")
-        time.sleep(2)
-        
-        # В самом конце удаляем setup.py и его директорию
+    with console.status("[bold red]Удаление проекта...", spinner="dots") as status:
         try:
-            # Получаем путь к родительской директории
-            parent_dir = os.path.dirname(current_dir)
-            # Удаляем setup.py
-            os.remove(__file__)
-            print("Удален файл: setup.py")
-            # Удаляем родительскую директорию, если она пуста
-            if not os.listdir(current_dir):
-                os.rmdir(current_dir)
-                print(f"Удалена директория: {os.path.basename(current_dir)}")
-        except Exception as e:
-            print(f"Предупреждение: Не удалось удалить setup.py: {str(e)}")
-        
-        # Закрываем окно PowerShell
-        if os.name == 'nt':
-            os.system('exit')
-        else:
-            os.system('kill -9 $$')
+            # Получаем путь к текущей директории
+            current_dir = os.path.dirname(os.path.abspath(__file__))
             
-    except Exception as e:
-        print(f"\nОшибка при удалении: {str(e)}")
-        time.sleep(2)
-        return
+            # Список файлов и папок для удаления (в порядке удаления)
+            items_to_remove = [
+                # Сначала удаляем сгенерированные файлы и папки
+                'build',
+                'results',
+                'vcpkg',
+                'CMakeFiles',
+                'CMakeCache.txt',
+                'cmake_install.cmake',
+                'Makefile',
+                'GraphBaseTool.sln',
+                'x64',
+                'Debug',
+                'Release',
+                'GraphBaseTool.vcxproj',
+                'GraphBaseTool.vcxproj.filters',
+                'GraphBaseTool.vcxproj.user',
+                'GraphBaseTool.exe',
+                
+                # Затем удаляем исходные файлы
+                'graph.cpp',
+                'graph.h',
+                'main.cpp',
+                'run_benchmarks.ps1',
+                
+                # В конце удаляем системные файлы
+                '.git',
+                '.gitignore'
+            ]
+            
+            # Создаем прогресс-бар
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+                console=console
+            ) as progress:
+                task = progress.add_task("[red]Удаление файлов...", total=len(items_to_remove))
+                
+                # Удаляем каждый элемент
+                for item in items_to_remove:
+                    item_path = os.path.join(current_dir, item)
+                    if os.path.exists(item_path):
+                        try:
+                            if os.path.isfile(item_path):
+                                os.remove(item_path)
+                                console.print(f"[green]✓[/green] Удален файл: {item}")
+                            elif os.path.isdir(item_path):
+                                shutil.rmtree(item_path)
+                                console.print(f"[green]✓[/green] Удалена папка: {item}")
+                        except Exception as e:
+                            console.print(f"[yellow]⚠[/yellow] Не удалось удалить {item}: {str(e)}")
+                    progress.update(task, advance=1)
+                    time.sleep(0.1)  # Небольшая задержка для анимации
+            
+            console.print("\n[bold green]Проект успешно удален![/bold green]")
+            time.sleep(2)
+            
+            # В самом конце удаляем setup.py и его директорию
+            try:
+                # Получаем путь к родительской директории
+                parent_dir = os.path.dirname(current_dir)
+                # Удаляем setup.py
+                os.remove(__file__)
+                console.print("[green]✓[/green] Удален файл: setup.py")
+                # Удаляем родительскую директорию, если она пуста
+                if not os.listdir(current_dir):
+                    os.rmdir(current_dir)
+                    console.print(f"[green]✓[/green] Удалена директория: {os.path.basename(current_dir)}")
+            except Exception as e:
+                console.print(f"[yellow]⚠[/yellow] Не удалось удалить setup.py: {str(e)}")
+            
+            # Закрываем окно консоли через Win32 API
+            if os.name == 'nt':
+                kernel32 = ctypes.WinDLL('kernel32')
+                user32 = ctypes.WinDLL('user32')
+                hWnd = kernel32.GetConsoleWindow()
+                if hWnd:
+                    # Получаем ID процесса
+                    pid = ctypes.c_ulong()
+                    user32.GetWindowThreadProcessId(hWnd, ctypes.byref(pid))
+                    # Открываем процесс
+                    handle = kernel32.OpenProcess(1, False, pid)
+                    # Завершаем процесс
+                    kernel32.TerminateProcess(handle, 0)
+                    # Закрываем хендл
+                    kernel32.CloseHandle(handle)
+            sys.exit(0)
+                
+        except Exception as e:
+            console.print(f"\n[bold red]Ошибка при удалении: {str(e)}[/bold red]")
+            time.sleep(2)
+            return False
 
 def update():
     clear_screen()
@@ -450,12 +474,24 @@ def show_farewell():
     for line in farewell_logo.splitlines():
         print(line.center(width))
     print("\n" + "До свидания!".center(width) + "\n")
-    time.sleep(5)
-    # Закрыть окно PowerShell (только для Windows)
+    time.sleep(2)
+    
+    # Закрываем окно консоли через Win32 API
     if os.name == 'nt':
-        os.system('exit')
-    else:
-        os.system('kill -9 $$')
+        kernel32 = ctypes.WinDLL('kernel32')
+        user32 = ctypes.WinDLL('user32')
+        hWnd = kernel32.GetConsoleWindow()
+        if hWnd:
+            # Получаем ID процесса
+            pid = ctypes.c_ulong()
+            user32.GetWindowThreadProcessId(hWnd, ctypes.byref(pid))
+            # Открываем процесс
+            handle = kernel32.OpenProcess(1, False, pid)
+            # Завершаем процесс
+            kernel32.TerminateProcess(handle, 0)
+            # Закрываем хендл
+            kernel32.CloseHandle(handle)
+    sys.exit(0)
 
 def main():
     print("=== GraphBaseTool - Установка и настройка ===")
@@ -521,6 +557,7 @@ if __name__ == "__main__":
             packages=find_packages(),
             install_requires=[
                 "boost",
+                "rich",
             ],
             python_requires=">=3.7",
             cmdclass={

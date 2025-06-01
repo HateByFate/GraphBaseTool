@@ -35,30 +35,45 @@ def find_executable(name, root_dir):
 
 def run_benchmark(script_path, root_dir):
     """Запускает бенчмарк и возвращает его результаты."""
-    print(f"Запуск бенчмарка для {script_path}...")
+    print(f"\nЗапуск бенчмарка для {script_path}...")
     
-    # Определяем тип бенчмарка
-    if script_path.endswith('.cpp'):
+    # Определяем тип бенчмарка и имя библиотеки
+    if script_path.endswith('.cpp') or script_path.endswith('.exe'):
         # Для C++ бенчмарков ищем исполняемый файл
-        exe_name = os.path.splitext(os.path.basename(script_path))[0] + '.exe'
-        exe_path = find_executable(exe_name, root_dir)
-        if not exe_path:
-            print(f"Ошибка при выполнении {script_path}: Не найден {exe_name}. Сначала соберите проект.")
+        if script_path.endswith('.cpp'):
+            exe_name = os.path.splitext(os.path.basename(script_path))[0] + '.exe'
+            exe_path = find_executable(exe_name, root_dir)
+            library_name = os.path.splitext(os.path.basename(script_path))[0]
+        else:
+            exe_path = script_path
+            library_name = os.path.splitext(os.path.basename(script_path))[0]
+            
+        if not exe_path or not os.path.exists(exe_path):
+            print(f"Ошибка при выполнении {script_path}: Не найден исполняемый файл. Сначала соберите проект.")
             return None
-        cmd = f'"{exe_path}"'
+            
+        try:
+            # Запускаем исполняемый файл и получаем вывод
+            result = subprocess.run(f'"{exe_path}"', shell=True, capture_output=True, text=True, encoding='utf-8')
+            if result.returncode != 0:
+                print(f"Ошибка при выполнении {script_path}: {result.stderr}")
+                return None
+            return result.stdout, library_name
+        except Exception as e:
+            print(f"Ошибка при выполнении {script_path}: {str(e)}")
+            return None
     else:
         # Для Python скриптов
-        cmd = f'python "{script_path}"'
-    
-    try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"Ошибка при выполнении {script_path}: {result.stderr}")
+        try:
+            result = subprocess.run(f'python "{script_path}"', shell=True, capture_output=True, text=True, encoding='utf-8')
+            if result.returncode != 0:
+                print(f"Ошибка при выполнении {script_path}: {result.stderr}")
+                return None
+            library_name = os.path.splitext(os.path.basename(script_path))[0].replace('_benchmark', '')
+            return result.stdout, library_name
+        except Exception as e:
+            print(f"Ошибка при выполнении {script_path}: {str(e)}")
             return None
-        return result.stdout
-    except Exception as e:
-        print(f"Ошибка при выполнении {script_path}: {str(e)}")
-        return None
 
 def main():
     parser = argparse.ArgumentParser(description='Запуск бенчмарков')
@@ -73,7 +88,7 @@ def main():
     results_dir = os.path.join(root_dir, "results")
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
-    print(f"[DEBUG] Папка results будет создана здесь: {results_dir}")
+    print(f"[DEBUG] Создана директория для результатов: {results_dir}")
     
     # Список бенчмарков
     benchmarks = [
@@ -85,21 +100,32 @@ def main():
     
     # Запускаем бенчмарки
     results = []
-    for script in tqdm(benchmarks, desc="Выполнение бенчмарков"):
-        output = run_benchmark(script, root_dir)
-        if output:
-            try:
-                # Парсим JSON из вывода
-                for line in output.strip().split('\n'):
-                    if line.strip():
-                        result = json.loads(line)
-                        results.append(result)
-            except json.JSONDecodeError as e:
-                print(f"Ошибка при парсинге результатов {script}: {str(e)}")
+    print("\nНачинаем выполнение бенчмарков...")
+    with tqdm(total=len(benchmarks), desc="Выполнение бенчмарков", bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]') as pbar:
+        for script in benchmarks:
+            output = run_benchmark(script, root_dir)
+            if output:
+                output_text, library_name = output
+                try:
+                    # Парсим JSON из вывода
+                    for line in output_text.strip().split('\n'):
+                        if line.strip():
+                            try:
+                                result = json.loads(line)
+                                result['library'] = library_name
+                                results.append(result)
+                            except json.JSONDecodeError as e:
+                                print(f"Ошибка при парсинге строки: {line}")
+                                print(f"Ошибка: {str(e)}")
+                except Exception as e:
+                    print(f"Ошибка при обработке результатов {script}: {str(e)}")
+            pbar.update(1)
     
     if not results:
         print("Нет результатов для анализа")
         return
+    
+    print("\nОбработка результатов...")
     
     # Сохраняем результаты
     results_file = os.path.join(results_dir, "benchmark_results.json")
@@ -107,13 +133,14 @@ def main():
         json.dump(results, f, indent=2)
     
     # Создаем графики
+    print("Создание графиков...")
     create_plots(results, results_dir)
     
     # Создаем отчет
+    print("Создание отчета...")
     create_report(results, results_dir)
     
-    print("\nБенчмарки завершены!")
-    print("Результаты сохранены в директории 'results':")
+    print("\nРезультаты сохранены в директории 'results':")
     print(f"- {results_file}")
     print(f"- {os.path.join(results_dir, 'benchmark_time_ms.png')}")
     print(f"- {os.path.join(results_dir, 'benchmark_memory_mb.png')}")
@@ -132,9 +159,10 @@ def create_plots(results, results_dir):
     # Создаем график времени выполнения
     plt.figure(figsize=(12, 6))
     for op, data in operations.items():
-        sizes = [d['size'] for d in data]
-        times = [d['time_ms'] for d in data]
-        plt.plot(sizes, times, marker='o', label=op)
+        sizes = [d['size'] for d in data if 'time_ms' in d]
+        times = [d['time_ms'] for d in data if 'time_ms' in d]
+        if sizes and times:  # Проверяем, что есть данные для построения
+            plt.plot(sizes, times, marker='o', label=op)
     plt.xlabel('Размер графа')
     plt.ylabel('Время (мс)')
     plt.title('Время выполнения операций')
@@ -146,9 +174,10 @@ def create_plots(results, results_dir):
     # Создаем график использования памяти
     plt.figure(figsize=(12, 6))
     for op, data in operations.items():
-        sizes = [d['size'] for d in data]
-        memory = [d['memory_mb'] for d in data]
-        plt.plot(sizes, memory, marker='o', label=op)
+        sizes = [d['size'] for d in data if 'memory_mb' in d]
+        memory = [d['memory_mb'] for d in data if 'memory_mb' in d]
+        if sizes and memory:  # Проверяем, что есть данные для построения
+            plt.plot(sizes, memory, marker='o', label=op)
     plt.xlabel('Размер графа')
     plt.ylabel('Память (МБ)')
     plt.title('Использование памяти')
@@ -157,29 +186,69 @@ def create_plots(results, results_dir):
     plt.savefig(os.path.join(results_dir, 'benchmark_memory_mb.png'))
     plt.close()
 
+def get_russian_op_name(op):
+    mapping = {
+        'graph_creation': 'Создание графа',
+        'dijkstra': 'Алгоритм Дейкстры',
+        'floyd_warshall': 'Алгоритм Флойда-Уоршелла',
+        'floyd_warshall_parallel': 'Параллельный Флойд-Уоршелл',
+        'negative_cycle': 'Поиск отрицательных циклов',
+        'memory_profile': 'Профилирование памяти',
+    }
+    return mapping.get(op, op)
+
 def create_report(results, results_dir):
     """Создает отчет в формате Markdown."""
-    # Группируем результаты по операциям
+    # Группируем результаты по операциям и размерам
     operations = {}
     for result in results:
         op = result['operation']
+        size = result['size']
         if op not in operations:
-            operations[op] = []
-        operations[op].append(result)
-    
+            operations[op] = {}
+        if size not in operations[op]:
+            operations[op][size] = []
+        operations[op][size].append(result)
+
     # Создаем отчет
-    report = "# Результаты бенчмарков\n\n"
-    
-    for op, data in operations.items():
-        report += f"## {op}\n\n"
-        report += "| Размер | Время (мс) | Память (МБ) | Рёбра |\n"
-        report += "|--------|------------|-------------|--------|\n"
-        
-        for result in sorted(data, key=lambda x: x['size']):
-            report += f"| {result['size']} | {result['time_ms']:.2f} | {result['memory_mb']:.2f} | {result['edges']} |\n"
-        
-        report += "\n"
-    
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    report = f"# Результаты бенчмарков\n\nВремя выполнения: {current_time}\n\n"
+
+    # Определяем порядок операций
+    op_order = [
+        'graph_creation',
+        'dijkstra',
+        'floyd_warshall',
+        'floyd_warshall_parallel',
+        'negative_cycle',
+        'memory_profile'
+    ]
+
+    for op in op_order:
+        if op in operations:
+            report += f"## {get_russian_op_name(op)}\n\n"
+            for size in sorted(operations[op].keys()):
+                report += f"### Граф с {size} вершинами\n\n"
+                # Заголовок таблицы
+                report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
+                    "Библиотека", "Вершины", "Рёбра", "Время (мс)", "Память (МБ)")
+                report += "|{:-<17}|{:-<14}|{:-<14}|{:-<14}|{:-<14}|\n".format('', '', '', '', '')
+                # Сортируем результаты по времени выполнения
+                sorted_results = sorted(operations[op][size], key=lambda x: x.get('time_ms', 0))
+                for result in sorted_results:
+                    lib_name = result.get('library', 'Unknown')
+                    # Для performance_test.exe подставляем GraphBaseTool
+                    if lib_name.lower() == 'performance_test':
+                        lib_name = 'GraphBaseTool'
+                    report += "| {:<15} | {:<12} | {:<12} | {:<12.2f} | {:<12.2f} |\n".format(
+                        lib_name,
+                        result.get('size', ''),
+                        result.get('edges', ''),
+                        result.get('time_ms', 0),
+                        result.get('memory_mb', 0)
+                    )
+                report += "\n"
+
     # Сохраняем отчет
     with open(os.path.join(results_dir, 'benchmark_results.md'), 'w', encoding='utf-8') as f:
         f.write(report)

@@ -132,9 +132,6 @@ void run_performance_tests() {
     }
     
     // Тест 4: Параллельный алгоритм Флойда-Уоршелла
-    std::cout << "\nТест 4: Параллельный алгоритм Флойда-Уоршелла\n";
-    std::cout << "Размер графа | Потоки | Время (мс) | Память (МБ)\n";
-    std::cout << "--------------------------------------------\n";
     for (size_t vertices : {100, 200, 500, 1000}) {
         size_t edges = vertices * 2; // Количество рёбер = 2 * количество вершин
         Graph graph = generate_random_graph(vertices, edges);
@@ -146,15 +143,16 @@ void run_performance_tests() {
                 graph.floyd_warshall_parallel(threads);
             });
             double memory_mb = memory / (1024.0 * 1024.0);
-            std::cout << std::setw(10) << vertices << " | " << std::setw(7) << threads << " | " 
-                     << std::setw(10) << time << " | " << std::setw(10) << memory_mb << "\n";
+            std::cout << "{\"operation\": \"floyd_warshall_parallel\", \"size\": " << vertices
+                      << ", \"time_ms\": " << time
+                      << ", \"memory_mb\": " << memory_mb
+                      << ", \"edges\": " << edges
+                      << ", \"threads\": " << threads << "}"
+                      << std::endl;
         }
     }
     
     // Тест 5: Поиск отрицательных циклов
-    std::cout << "\nТест 5: Поиск отрицательных циклов\n";
-    std::cout << "Размер графа | Время (мс) | Память (МБ)\n";
-    std::cout << "-------------------------------------\n";
     for (size_t vertices : {100, 200, 500, 1000}) {
         size_t edges = vertices * 2; // Количество рёбер = 2 * количество вершин
         Graph graph = generate_random_graph(vertices, edges);
@@ -165,13 +163,14 @@ void run_performance_tests() {
             graph.has_negative_cycle();
         });
         double memory_mb = memory / (1024.0 * 1024.0);
-        std::cout << std::setw(10) << vertices << " | " << std::setw(10) << time << " | " << std::setw(10) << memory_mb << "\n";
+        std::cout << "{\"operation\": \"negative_cycle\", \"size\": " << vertices
+                  << ", \"time_ms\": " << time
+                  << ", \"memory_mb\": " << memory_mb
+                  << ", \"edges\": " << edges << "}"
+                  << std::endl;
     }
     
     // Тест 6: Профилирование памяти
-    std::cout << "\nТест 6: Профилирование памяти\n";
-    std::cout << "Размер графа | Память (МБ)\n";
-    std::cout << "------------------------\n";
     for (size_t vertices : {100, 200, 500, 1000}) {
         size_t edges = vertices * 2; // Количество рёбер = 2 * количество вершин
         Graph graph;
@@ -179,20 +178,20 @@ void run_performance_tests() {
             graph = generate_random_graph(vertices, edges);
         });
         double memory_mb = memory / (1024.0 * 1024.0);
-        std::cout << std::setw(10) << vertices << " | " << std::setw(10) << memory_mb << "\n";
+        std::cout << "{\"operation\": \"memory_profile\", \"size\": " << vertices
+                  << ", \"memory_mb\": " << memory_mb
+                  << ", \"edges\": " << edges << "}"
+                  << std::endl;
     }
 }
 
 int main() {
     try {
-        std::cout << "Начало тестирования производительности...\n";
-        std::cout << "Перед запуском run_performance_tests()\n";
         run_performance_tests();
-        std::cout << "\nТестирование производительности завершено.\n";
     } catch (const std::exception& ex) {
-        std::cerr << "Исключение: " << ex.what() << std::endl;
+        std::cerr << "{\"error\": \"" << ex.what() << "\"}" << std::endl;
     } catch (...) {
-        std::cerr << "Неизвестное исключение!" << std::endl;
+        std::cerr << "{\"error\": \"Неизвестное исключение!\"}" << std::endl;
     }
     return 0;
 } 
