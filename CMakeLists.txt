@@ -12,10 +12,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Находим пакет Boost
-find_package(Boost REQUIRED COMPONENTS system)
+find_package(Boost REQUIRED COMPONENTS system graph)
 
-# Добавляем директорию с заголовочными файлами
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+# Добавляем директории с заголовочными файлами
+include_directories(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${Boost_INCLUDE_DIRS}
+)
 
 # Создаем библиотеку
 add_library(GraphBaseTool
@@ -23,7 +26,7 @@ add_library(GraphBaseTool
 )
 
 # Линкуем с Boost
-target_link_libraries(GraphBaseTool PRIVATE Boost::system)
+target_link_libraries(GraphBaseTool PRIVATE Boost::system Boost::graph)
 
 # Устанавливаем свойства библиотеки
 set_target_properties(GraphBaseTool PROPERTIES
@@ -39,8 +42,12 @@ target_link_libraries(graph_test PRIVATE GraphBaseTool)
 add_executable(performance_test tests/performance_test.cpp)
 target_link_libraries(performance_test PRIVATE GraphBaseTool)
 
+# Добавляем бенчмарк для Boost
+add_executable(boost_benchmark benchmarks/boost_benchmark.cpp)
+target_link_libraries(boost_benchmark PRIVATE GraphBaseTool)
+
 # Устанавливаем выходные директории
-set_target_properties(GraphBaseTool graph_test performance_test
+set_target_properties(GraphBaseTool graph_test performance_test boost_benchmark
     PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib"
