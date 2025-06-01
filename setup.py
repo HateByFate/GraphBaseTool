@@ -338,8 +338,9 @@ def uninstall_project():
             # Получаем путь к корневой директории проекта
             project_dir = current_dir
             
-            # Проверяем, что мы находимся в директории GraphBaseTool
-            if os.path.basename(project_dir).lower() == 'graphbasetool-main':
+            # Проверяем, что мы находимся в директории GraphBaseTool (с учетом возможных вариантов имени)
+            dir_name = os.path.basename(project_dir).lower()
+            if 'graphbasetool' in dir_name:
                 console.print("[blue]Удаление корневой директории проекта...[/blue]")
                 try:
                     # Даем полные права на директорию и все её содержимое
@@ -366,14 +367,14 @@ def uninstall_project():
             console.print(f"[yellow]Предупреждение: Не удалось удалить корневую директорию: {str(e)}[/yellow]")
         
         console.print("[green]Удаление проекта завершено![/green]")
-        time.sleep(2)
+        time.sleep(1)
         show_farewell()
         
     except Exception as e:
         console.print(f"[red]Критическая ошибка при удалении проекта: {str(e)}[/red]")
         console.print(f"[red]Тип ошибки: {type(e).__name__}[/red]")
         console.print(f"[red]Детали ошибки: {str(e)}[/red]")
-        time.sleep(3)
+        time.sleep(1)
         show_farewell()
 
 def update():
