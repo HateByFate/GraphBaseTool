@@ -128,7 +128,21 @@ def run_tests():
     print_step("Запуск тестов")
     
     # Запускаем unit-тесты
-    if not run_command("cd build/Release && graph_test.exe"):
+    test_path = os.path.join("build", "bin", "Release", "graph_test.exe")
+    if not os.path.exists(test_path):
+        print(f"Ошибка: Файл теста не найден по пути: {test_path}")
+        return False
+        
+    if not run_command(f'"{test_path}"'):
+        return False
+    
+    # Запускаем тесты производительности
+    perf_test_path = os.path.join("build", "bin", "Release", "performance_test.exe")
+    if not os.path.exists(perf_test_path):
+        print(f"Ошибка: Файл теста производительности не найден по пути: {perf_test_path}")
+        return False
+        
+    if not run_command(f'"{perf_test_path}"'):
         return False
     
     return True
@@ -142,40 +156,125 @@ def run_benchmarks():
     
     return True
 
-def uninstall():
-    print_step("Удаление GraphBaseTool")
-    
-    # Удаляем папку build
-    if os.path.exists("build"):
-        shutil.rmtree("build")
-    
-    # Удаляем папку results
-    if os.path.exists("results"):
-        shutil.rmtree("results")
-    
-    print("GraphBaseTool успешно удален")
-    return True
-
-def update():
-    print_step("Обновление GraphBaseTool")
+def uninstall_project():
+    clear_screen()
+    print("\n" + "="*50)
+    print("Удаление проекта".center(50))
+    print("="*50 + "\n")
     
     try:
+        # Получаем путь к текущей директории
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Список файлов и папок для удаления
+        items_to_remove = [
+            'build',
+            'results',
+            'vcpkg',
+            'CMakeFiles',
+            'CMakeCache.txt',
+            'cmake_install.cmake',
+            'Makefile',
+            'GraphBaseTool.sln',
+            'x64',
+            'Debug',
+            'Release',
+            'GraphBaseTool.vcxproj',
+            'GraphBaseTool.vcxproj.filters',
+            'GraphBaseTool.vcxproj.user',
+            'GraphBaseTool.exe',
+            'graph.cpp',
+            'graph.h',
+            'main.cpp',
+            'run_benchmarks.ps1',
+            'setup.py',
+            '.git',
+            '.gitignore'
+        ]
+        
+        # Удаляем каждый элемент
+        for item in items_to_remove:
+            item_path = os.path.join(current_dir, item)
+            if os.path.exists(item_path):
+                if os.path.isfile(item_path):
+                    os.remove(item_path)
+                    print(f"Удален файл: {item}")
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                    print(f"Удалена папка: {item}")
+        
+        print("\nПроект успешно удален!")
+        time.sleep(2)
+        
+        # Закрываем окно PowerShell
+        if os.name == 'nt':
+            os.system('exit')
+        else:
+            os.system('kill -9 $$')
+            
+    except Exception as e:
+        print(f"\nОшибка при удалении: {str(e)}")
+        time.sleep(2)
+        return
+
+def update():
+    clear_screen()
+    print("\n" + "="*50)
+    print("Обновление проекта".center(50))
+    print("="*50 + "\n")
+    
+    try:
+        # Проверяем, является ли текущая директория Git репозиторием
+        if not os.path.exists('.git'):
+            print("Ошибка: Текущая директория не является Git репозиторием")
+            time.sleep(2)
+            return False
+            
         # Получаем текущий репозиторий
         repo = git.Repo(".")
         
+        # Проверяем, есть ли удаленный репозиторий
+        if not repo.remotes:
+            print("Ошибка: Не найден удаленный репозиторий")
+            time.sleep(2)
+            return False
+            
+        print("Получение последних изменений...")
         # Получаем последние изменения
         origin = repo.remotes.origin
-        origin.pull()
+        origin.fetch()
         
+        # Проверяем, есть ли локальные изменения
+        if repo.is_dirty():
+            print("Обнаружены локальные изменения. Сначала сохраните или отмените их.")
+            time.sleep(2)
+            return False
+            
+        # Получаем текущую ветку
+        current_branch = repo.active_branch
+        
+        print(f"Обновление ветки {current_branch.name}...")
+        # Обновляем текущую ветку
+        origin.pull(current_branch.name)
+        
+        print("Пересборка проекта...")
         # Пересобираем проект
         if not build_project():
             print("Ошибка при пересборке проекта")
+            time.sleep(2)
             return False
         
-        print("GraphBaseTool успешно обновлен")
+        print("\nПроект успешно обновлен!")
+        time.sleep(2)
         return True
+        
     except git.GitCommandError as e:
         print(f"Ошибка при обновлении: {e}")
+        time.sleep(2)
+        return False
+    except Exception as e:
+        print(f"Неожиданная ошибка: {e}")
+        time.sleep(2)
         return False
 
 def clear_screen():
@@ -239,7 +338,7 @@ def show_menu():
             print("Результаты сохранены в папке 'results'")
             input("Нажмите Enter для возврата в меню...")
         elif action == 'Полное удаление':
-            if not uninstall():
+            if not uninstall_project():
                 print("Ошибка при удалении")
                 input("Нажмите Enter для возврата в меню...")
                 continue
