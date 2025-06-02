@@ -7,6 +7,11 @@
 #include <bitset>
 #include <chrono>
 #include <nlohmann/json.hpp>
+#ifdef _WIN32
+#include <windows.h>
+#include <psapi.h>
+#pragma comment(lib, "Psapi.lib")
+#endif
 
 namespace routing {
 
@@ -97,6 +102,17 @@ public:
     ProfilingResult profile_operation(const std::string& name, std::function<void()> operation) const;
     PerformanceStats get_performance_stats() const;
     void reset_performance_stats();
+    size_t get_current_memory_usage() const {
+#ifdef _WIN32
+        PROCESS_MEMORY_COUNTERS_EX pmc;
+        if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+            return static_cast<size_t>(pmc.WorkingSetSize);
+        }
+        return 0;
+#else
+        return 0;
+#endif
+    }
 
 private:
     // Оптимизированная структура хранения графа

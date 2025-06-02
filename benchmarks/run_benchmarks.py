@@ -99,6 +99,17 @@ def main():
         os.path.join(root_dir, "benchmarks", "performance_test.cpp")
     ]
     
+    # Инициализирую словарь operations перед использованием
+    operations = {}
+
+    # Добавляю проверку на наличие данных для параллельного алгоритма Флойда-Уоршелла
+    if 'floyd_warshall_parallel' not in operations:
+        operations['floyd_warshall_parallel'] = []
+
+    # Проверяю, что все бенчмарки для параллельного алгоритма Флойда-Уоршелла включены
+    if 'performance_test.cpp' not in benchmarks:
+        benchmarks.append(os.path.join(root_dir, 'benchmarks', 'performance_test.cpp'))
+    
     # Запускаем бенчмарки
     results = []
     print("\nНачинаем выполнение бенчмарков...")
@@ -209,8 +220,7 @@ def create_report(results, results_dir):
         'dijkstra',
         'floyd_warshall',
         'floyd_warshall_parallel',
-        'negative_cycle',
-        'memory_profile'
+        'negative_cycle'
     ]
     op_libs = {
         'graph_creation': ['networkx', 'boost_benchmark', 'igraph', 'GraphBaseTool'],
@@ -218,7 +228,6 @@ def create_report(results, results_dir):
         'floyd_warshall': ['boost_benchmark', 'igraph', 'GraphBaseTool', 'networkx'],
         'floyd_warshall_parallel': ['GraphBaseTool'],
         'negative_cycle': ['GraphBaseTool'],
-        'memory_profile': ['GraphBaseTool'],
     }
     sizes = [100, 200, 500, 1000]
     size_to_edges = {100: 200, 200: 400, 500: 1000, 1000: 2000}
@@ -248,15 +257,23 @@ def create_report(results, results_dir):
             report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
                 "Библиотека", "Вершины", "Рёбра", "Время (мс)", "Память (МБ)")
             report += "|{:-<17}|{:-<14}|{:-<14}|{:-<14}|{:-<14}|\n".format('', '', '', '', '')
+            libs_with_results = []
+            libs_without_results = []
             for lib in op_libs[op]:
                 res = grouped[op][size].get(lib)
-                if res:
-                    report += "| {:<15} | {:<12} | {:<12} | {:<12.2f} | {:<12.2f} |\n".format(
-                        lib, size, size_to_edges[size], res.get('time_ms', 0), res.get('memory_mb', 0)
-                    )
+                if res and 'time_ms' in res:
+                    libs_with_results.append((lib, res))
                 else:
-                    report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
-                        lib, size, size_to_edges[size], '-', '-')
+                    libs_without_results.append((lib, None))
+            # Сортируем по времени выполнения
+            libs_with_results.sort(key=lambda x: x[1]['time_ms'])
+            for lib, res in libs_with_results:
+                report += "| {:<15} | {:<12} | {:<12} | {:<12.2f} | {:<12.2f} |\n".format(
+                    lib, size, size_to_edges[size], res.get('time_ms', 0), res.get('memory_mb', 0)
+                )
+            for lib, _ in libs_without_results:
+                report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
+                    lib, size, size_to_edges[size], '-', '-')
             report += "\n"
 
     with open(os.path.join(results_dir, 'benchmark_results.md'), 'w', encoding='utf-8') as f:

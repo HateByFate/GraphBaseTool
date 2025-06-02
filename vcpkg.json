@@ -1,18 +1,12 @@
 {
-    "name": "graph-base-tool",
-    "version": "1.0.0",
-    "dependencies": [
-        "nlohmann-json",
-        "benchmark",
-        "gtest",
-        "boost",
-        "catch2"
-    ],
-    "builtin-baseline": "a9eee3b18df395dbb8be71a31bd78ea441056e42",
-    "overrides": [
-        {
-            "name": "nlohmann-json",
-            "version": "3.11.3"
-        }
-    ]
-} 
+  "name": "graph-base-tool",
+  "version": "1.0.0",
+  "dependencies": ["nlohmann-json", "benchmark", "gtest", "boost", "catch2"],
+  "builtin-baseline": "a9eee3b18df395dbb8be71a31bd78ea441056e42",
+  "overrides": [
+    {
+      "name": "nlohmann-json",
+      "version": "3.11.3"
+    }
+  ]
+}

@@ -16,6 +16,7 @@
 #include <thread>
 #include <bitset>
 #include <stack>
+#include <iostream>
 
 using json = nlohmann::json;
 
@@ -198,6 +199,7 @@ std::vector<double> Graph::dijkstra_optimized(size_t start) const {
     }
     return distances;
 }
+
 
 std::vector<size_t> Graph::a_star_optimized(size_t start, size_t goal,
                                           std::function<double(size_t, size_t)> heuristic) const {
@@ -502,23 +504,6 @@ void Graph::update_stats() const {
     }
 }
 
-ProfilingResult Graph::profile_operation(const std::string& name, std::function<void()> operation) const {
-    auto start_time = std::chrono::steady_clock::now();
-    size_t start_memory = peak_memory_usage_;
-    operation();
-    auto end_time = std::chrono::steady_clock::now();
-    size_t end_memory = peak_memory_usage_;
-    ProfilingResult result{
-        name,
-        std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time),
-        end_memory - start_memory
-    };
-    profiling_results_.push_back(result);
-    ++total_operations_;
-    peak_memory_usage_ = std::max(peak_memory_usage_, end_memory);
-    return result;
-}
-
 PerformanceStats Graph::get_performance_stats() const {
     PerformanceStats stats;
     stats.operation_times = profiling_results_;
@@ -558,6 +543,23 @@ void Graph::cleanup_cache() const {
             ++it;
         }
     }
+}
+
+ProfilingResult Graph::profile_operation(const std::string& name, std::function<void()> operation) const {
+    auto start_time = std::chrono::steady_clock::now();
+    size_t start_memory = get_current_memory_usage();
+    operation();
+    auto end_time = std::chrono::steady_clock::now();
+    size_t end_memory = get_current_memory_usage();
+    ProfilingResult result{
+        name,
+        std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time),
+        end_memory > start_memory ? end_memory - start_memory : 0
+    };
+    profiling_results_.push_back(result);
+    ++total_operations_;
+    peak_memory_usage_ = std::max(peak_memory_usage_, end_memory);
+    return result;
 }
 
 } // namespace routing
