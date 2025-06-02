@@ -66,7 +66,10 @@ def run_benchmark(script_path, root_dir):
     else:
         # Для Python скриптов
         try:
-            result = subprocess.run(f'python "{script_path}"', shell=True, capture_output=True, text=True, encoding='utf-8')
+            # Устанавливаем переменные окружения для корректной работы с кодировкой
+            env = os.environ.copy()
+            env['PYTHONIOENCODING'] = 'utf-8'
+            result = subprocess.run(f'python "{script_path}"', shell=True, capture_output=True, text=True, encoding='utf-8', env=env)
             if result.returncode != 0:
                 print(f"Ошибка при выполнении {script_path}: {result.stderr}")
                 return None
@@ -202,6 +205,7 @@ def get_russian_op_name(op):
     mapping = {
         'graph_creation': 'Создание графа',
         'dijkstra': 'Алгоритм Дейкстры',
+        'a_star': 'Алгоритм A*',
         'floyd_warshall': 'Алгоритм Флойда-Уоршелла',
         'floyd_warshall_parallel': 'Параллельный Флойд-Уоршелл',
         'negative_cycle': 'Поиск отрицательных циклов',
@@ -218,6 +222,7 @@ def create_report(results, results_dir):
     op_order = [
         'graph_creation',
         'dijkstra',
+        'a_star',
         'floyd_warshall',
         'floyd_warshall_parallel',
         'negative_cycle'
@@ -225,6 +230,7 @@ def create_report(results, results_dir):
     op_libs = {
         'graph_creation': ['networkx', 'boost_benchmark', 'igraph', 'GraphBaseTool'],
         'dijkstra': ['boost_benchmark', 'GraphBaseTool', 'networkx', 'igraph'],
+        'a_star': ['boost_benchmark', 'GraphBaseTool', 'networkx', 'igraph'],
         'floyd_warshall': ['boost_benchmark', 'igraph', 'GraphBaseTool', 'networkx'],
         'floyd_warshall_parallel': ['GraphBaseTool'],
         'negative_cycle': ['GraphBaseTool'],
@@ -257,23 +263,31 @@ def create_report(results, results_dir):
             report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
                 "Библиотека", "Вершины", "Рёбра", "Время (мс)", "Память (МБ)")
             report += "|{:-<17}|{:-<14}|{:-<14}|{:-<14}|{:-<14}|\n".format('', '', '', '', '')
-            libs_with_results = []
-            libs_without_results = []
+            
+            # Получаем все результаты для текущей операции и размера
+            current_results = []
             for lib in op_libs[op]:
                 res = grouped[op][size].get(lib)
-                if res and 'time_ms' in res:
-                    libs_with_results.append((lib, res))
-                else:
-                    libs_without_results.append((lib, None))
-            # Сортируем по времени выполнения
-            libs_with_results.sort(key=lambda x: x[1]['time_ms'])
-            for lib, res in libs_with_results:
+                if res:
+                    current_results.append((lib, res))
+            
+            # Сортируем по времени выполнения, если оно есть
+            current_results.sort(key=lambda x: x[1].get('time_ms', float('inf')))
+            
+            # Выводим результаты
+            for lib, res in current_results:
+                time_ms = res.get('time_ms', 0)
+                memory_mb = res.get('memory_mb', 0)
                 report += "| {:<15} | {:<12} | {:<12} | {:<12.2f} | {:<12.2f} |\n".format(
-                    lib, size, size_to_edges[size], res.get('time_ms', 0), res.get('memory_mb', 0)
+                    lib, size, size_to_edges[size], time_ms, memory_mb
                 )
-            for lib, _ in libs_without_results:
+            
+            # Добавляем библиотеки без результатов
+            missing_libs = set(op_libs[op]) - {lib for lib, _ in current_results}
+            for lib in missing_libs:
                 report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
                     lib, size, size_to_edges[size], '-', '-')
+            
             report += "\n"
 
     with open(os.path.join(results_dir, 'benchmark_results.md'), 'w', encoding='utf-8') as f:

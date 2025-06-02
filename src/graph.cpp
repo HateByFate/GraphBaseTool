@@ -17,6 +17,7 @@
 #include <bitset>
 #include <stack>
 #include <iostream>
+#include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
 
@@ -24,6 +25,10 @@ namespace routing {
 
 size_t Graph::add_vertex() {
     vertices_.emplace_back();
+    vertices_.back().adjacency_mask.resize(vertex_count_ + 1, false);
+    for (auto& vertex : vertices_) {
+        vertex.adjacency_mask.resize(vertex_count_ + 1, false);
+    }
     return vertex_count_++;
 }
 
@@ -31,8 +36,10 @@ void Graph::add_edge(const Edge& edge) {
     if (edge.from >= vertex_count_ || edge.to >= vertex_count_) {
         throw std::out_of_range("Vertex index out of range");
     }
-    vertices_[edge.from].edges[edge.to] = edge;
-    vertices_[edge.from].degree++;
+    auto& vertex = vertices_[edge.from];
+    vertex.edges.push_back({edge.to, edge.weight});
+    vertex.degree++;
+    vertex.adjacency_mask[edge.to] = true;
     update_stats();
 }
 
@@ -40,12 +47,16 @@ void Graph::remove_edge(size_t from, size_t to) {
     if (from >= vertex_count_ || to >= vertex_count_) {
         throw std::out_of_range("Vertex index out of range");
     }
-    auto& edges = vertices_[from].edges;
-    auto it = edges.find(to);
-    if (it != edges.end()) {
-        edges.erase(it);
-        vertices_[from].degree--;
-        update_stats();
+    auto& vertex = vertices_[from];
+    if (vertex.adjacency_mask[to]) {
+        auto it = std::find_if(vertex.edges.begin(), vertex.edges.end(),
+                             [to](const InternalEdge& e) { return e.to == to; });
+        if (it != vertex.edges.end()) {
+            vertex.edges.erase(it);
+            vertex.degree--;
+            vertex.adjacency_mask[to] = false;
+            update_stats();
+        }
     }
 }
 
@@ -54,9 +65,10 @@ void Graph::update_edge_weight(size_t from, size_t to, double weight) {
         throw std::out_of_range("Vertex index out of range");
     }
     auto& edges = vertices_[from].edges;
-    auto it = edges.find(to);
+    auto it = std::find_if(edges.begin(), edges.end(),
+                          [to](const InternalEdge& e) { return e.to == to; });
     if (it != edges.end()) {
-        it->second.weight = weight;
+        it->weight = weight;
     }
 }
 
@@ -66,10 +78,8 @@ std::vector<Edge> Graph::get_neighbors(size_t vertex) const {
     }
     std::vector<Edge> neighbors;
     neighbors.reserve(vertices_[vertex].edges.size());
-    for (const auto& pair : vertices_[vertex].edges) {
-        auto to = pair.first;
-        const auto& edge = pair.second;
-        neighbors.push_back(edge);
+    for (const auto& edge : vertices_[vertex].edges) {
+        neighbors.push_back({vertex, edge.to, edge.weight});
     }
     return neighbors;
 }
@@ -78,9 +88,13 @@ double Graph::get_edge_weight(size_t from, size_t to) const {
     if (from >= vertex_count_ || to >= vertex_count_) {
         throw std::out_of_range("Vertex index out of range");
     }
+    if (!vertices_[from].adjacency_mask[to]) {
+        return std::numeric_limits<double>::infinity();
+    }
     const auto& edges = vertices_[from].edges;
-    auto it = edges.find(to);
-    return it != edges.end() ? it->second.weight : std::numeric_limits<double>::infinity();
+    auto it = std::find_if(edges.begin(), edges.end(),
+                          [to](const InternalEdge& e) { return e.to == to; });
+    return it != edges.end() ? it->weight : std::numeric_limits<double>::infinity();
 }
 
 size_t Graph::vertex_count() const {
@@ -99,7 +113,7 @@ bool Graph::has_edge(size_t from, size_t to) const {
     if (from >= vertices_.size() || to >= vertices_.size()) {
         return false;
     }
-    return vertices_[from].edges.find(to) != vertices_[from].edges.end();
+    return vertices_[from].adjacency_mask[to];
 }
 
 std::vector<double> Graph::dijkstra(size_t start) const {
@@ -116,9 +130,8 @@ std::vector<double> Graph::dijkstra(size_t start) const {
         auto [dist, u] = pq.top();
         pq.pop();
         if (dist > distances[u]) continue;
-        for (const auto& pair : vertices_[u].edges) {
-            auto v = pair.first;
-            const auto& edge = pair.second;
+        for (const auto& edge : vertices_[u].edges) {
+            size_t v = edge.to;
             double new_dist = distances[u] + edge.weight;
             if (new_dist < distances[v]) {
                 distances[v] = new_dist;
@@ -154,9 +167,8 @@ std::vector<size_t> Graph::a_star(size_t start, size_t goal,
             std::reverse(path.begin(), path.end());
             return path;
         }
-        for (const auto& pair : vertices_[current].edges) {
-            auto neighbor = pair.first;
-            const auto& edge = pair.second;
+        for (const auto& edge : vertices_[current].edges) {
+            size_t neighbor = edge.to;
             double tentative_g_score = g_score[current] + edge.weight;
             if (tentative_g_score < g_score[neighbor]) {
                 came_from[neighbor] = current;
@@ -176,18 +188,23 @@ std::vector<double> Graph::dijkstra_optimized(size_t start) const {
     std::vector<double> distances(vertex_count_, std::numeric_limits<double>::infinity());
     distances[start] = 0;
     std::vector<bool> visited(vertex_count_, false);
+    
+    // Используем бинарную кучу для оптимизации
     std::priority_queue<std::pair<double, size_t>,
                        std::vector<std::pair<double, size_t>>,
                        std::greater<>> pq;
     pq.push({0, start});
+    
     while (!pq.empty()) {
         auto [dist, u] = pq.top();
         pq.pop();
+        
         if (visited[u]) continue;
         visited[u] = true;
-        for (const auto& pair : vertices_[u].edges) {
-            auto v = pair.first;
-            const auto& edge = pair.second;
+        
+        const auto& vertex = vertices_[u];
+        for (const auto& edge : vertex.edges) {
+            size_t v = edge.to;
             if (!visited[v]) {
                 double new_dist = distances[u] + edge.weight;
                 if (new_dist < distances[v]) {
@@ -199,7 +216,6 @@ std::vector<double> Graph::dijkstra_optimized(size_t start) const {
     }
     return distances;
 }
-
 
 std::vector<size_t> Graph::a_star_optimized(size_t start, size_t goal,
                                           std::function<double(size_t, size_t)> heuristic) const {
@@ -229,9 +245,8 @@ std::vector<size_t> Graph::a_star_optimized(size_t start, size_t goal,
         }
         if (closed_set[current]) continue;
         closed_set[current] = true;
-        for (const auto& pair : vertices_[current].edges) {
-            auto neighbor = pair.first;
-            const auto& edge = pair.second;
+        for (const auto& edge : vertices_[current].edges) {
+            size_t neighbor = edge.to;
             if (closed_set[neighbor]) continue;
             double tentative_g_score = g_score[current] + edge.weight;
             if (tentative_g_score < g_score[neighbor]) {
@@ -253,9 +268,8 @@ std::pair<std::vector<double>, bool> Graph::bellman_ford(size_t start) const {
     distances[start] = 0;
     for (size_t i = 0; i < vertex_count_ - 1; ++i) {
         for (size_t u = 0; u < vertex_count_; ++u) {
-            for (const auto& pair : vertices_[u].edges) {
-                auto v = pair.first;
-                const auto& edge = pair.second;
+            for (const auto& edge : vertices_[u].edges) {
+                size_t v = edge.to;
                 if (distances[u] != std::numeric_limits<double>::infinity() &&
                     distances[u] + edge.weight < distances[v]) {
                     distances[v] = distances[u] + edge.weight;
@@ -264,9 +278,8 @@ std::pair<std::vector<double>, bool> Graph::bellman_ford(size_t start) const {
         }
     }
     for (size_t u = 0; u < vertex_count_; ++u) {
-        for (const auto& pair : vertices_[u].edges) {
-            auto v = pair.first;
-            const auto& edge = pair.second;
+        for (const auto& edge : vertices_[u].edges) {
+            size_t v = edge.to;
             if (distances[u] != std::numeric_limits<double>::infinity() &&
                 distances[u] + edge.weight < distances[v]) {
                 return {distances, true};
@@ -283,9 +296,8 @@ std::vector<std::vector<double>> Graph::floyd_warshall() const {
         dist[i][i] = 0;
     }
     for (size_t i = 0; i < vertex_count_; ++i) {
-        for (const auto& pair : vertices_[i].edges) {
-            auto j = pair.first;
-            const auto& edge = pair.second;
+        for (const auto& edge : vertices_[i].edges) {
+            size_t j = edge.to;
             dist[i][j] = edge.weight;
         }
     }
@@ -309,9 +321,8 @@ std::vector<std::vector<double>> Graph::floyd_warshall_parallel(size_t num_threa
         dist[i][i] = 0;
     }
     for (size_t i = 0; i < vertex_count_; ++i) {
-        for (const auto& pair : vertices_[i].edges) {
-            auto j = pair.first;
-            const auto& edge = pair.second;
+        for (const auto& edge : vertices_[i].edges) {
+            size_t j = edge.to;
             dist[i][j] = edge.weight;
         }
     }
@@ -343,9 +354,8 @@ std::vector<std::vector<double>> Graph::floyd_warshall_parallel(size_t num_threa
 std::vector<std::bitset<64>> Graph::floyd_warshall_bitset() const {
     std::vector<std::bitset<64>> dist(vertex_count_);
     for (size_t i = 0; i < vertex_count_; ++i) {
-        for (const auto& pair : vertices_[i].edges) {
-            auto j = pair.first;
-            const auto& edge = pair.second;
+        for (const auto& edge : vertices_[i].edges) {
+            size_t j = edge.to;
             dist[i].set(j);
         }
     }
@@ -371,9 +381,8 @@ std::vector<size_t> Graph::get_negative_cycle() const {
     size_t cycle_start = vertex_count_;
     for (size_t i = 0; i < vertex_count_; ++i) {
         for (size_t u = 0; u < vertex_count_; ++u) {
-            for (const auto& pair : vertices_[u].edges) {
-                auto v = pair.first;
-                const auto& edge = pair.second;
+            for (const auto& edge : vertices_[u].edges) {
+                size_t v = edge.to;
                 if (distances[u] != std::numeric_limits<double>::infinity() &&
                     distances[u] + edge.weight < distances[v]) {
                     distances[v] = distances[u] + edge.weight;
@@ -439,10 +448,8 @@ std::string Graph::to_dot() const {
         ss << "  " << i << ";\n";
     }
     for (size_t i = 0; i < vertex_count_; ++i) {
-        for (const auto& pair : vertices_[i].edges) {
-            auto to = pair.first;
-            const auto& edge = pair.second;
-            ss << "  " << i << " -> " << to << " [label=\"" << edge.weight << "\"];\n";
+        for (const auto& edge : vertices_[i].edges) {
+            ss << "  " << i << " -> " << edge.to << " [label=\"" << edge.weight << "\"];\n";
         }
     }
     ss << "}";
@@ -486,8 +493,8 @@ void Graph::update_stats() const {
     std::vector<bool> visited(vertex_count_, false);
     std::function<void(size_t)> dfs = [&](size_t v) {
         visited[v] = true;
-        for (const auto& pair : vertices_[v].edges) {
-            auto u = pair.first;
+        for (const auto& edge : vertices_[v].edges) {
+            size_t u = edge.to;
             if (!visited[u]) {
                 dfs(u);
             }
@@ -525,23 +532,25 @@ void Graph::reset_performance_stats() {
     peak_memory_usage_ = 0;
 }
 
-void Graph::update_cache_entry(const std::pair<size_t, size_t>& key, double distance) const {
+void Graph::update_cache_entry(size_t from, size_t to, double distance) const {
     if (!caching_enabled_) return;
-    auto now = std::chrono::steady_clock::now();
-    distance_cache_[key] = {distance, now};
-    cleanup_cache();
+    
+    if (distance_cache_.size() <= from) {
+        distance_cache_.resize(from + 1);
+    }
+    if (distance_cache_[from].size() <= to) {
+        distance_cache_[from].resize(to + 1);
+    }
+    
+    distance_cache_[from][to] = {
+        distance,
+        std::chrono::steady_clock::now()
+    };
 }
 
-void Graph::cleanup_cache() const {
-    if (!caching_enabled_) return;
-    auto now = std::chrono::steady_clock::now();
-    auto threshold = now - std::chrono::minutes(5);
-    for (auto it = distance_cache_.begin(); it != distance_cache_.end();) {
-        if (it->second.last_access < threshold) {
-            it = distance_cache_.erase(it);
-        } else {
-            ++it;
-        }
+void Graph::resize_adjacency_masks() {
+    for (auto& vertex : vertices_) {
+        vertex.adjacency_mask.resize(vertex_count_, false);
     }
 }
 

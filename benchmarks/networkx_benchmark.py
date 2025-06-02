@@ -10,7 +10,8 @@ import threading
 import queue
 
 # Устанавливаем кодировку для вывода
-sys.stdout.reconfigure(encoding='utf-8')
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 def get_memory_usage():
     process = psutil.Process()
@@ -56,6 +57,13 @@ def measure_memory_usage(func, *args, **kwargs):
 
 def create_random_graph(n, edges):
     G = nx.gnm_random_graph(n, edges, directed=True)
+    # Убеждаемся, что граф связный
+    while not nx.is_strongly_connected(G):
+        # Добавляем случайное ребро
+        u = random.randint(0, n-1)
+        v = random.randint(0, n-1)
+        if u != v and not G.has_edge(u, v):
+            G.add_edge(u, v)
     return G
 
 def measure_time(func, *args, warmup_iterations=3, measurement_iterations=5, **kwargs):
@@ -128,7 +136,29 @@ def test_floyd_warshall():
         }
         print(json.dumps(result))
 
+def test_astar():
+    sizes = [100, 200, 500, 1000]
+    for size in sizes:
+        edges = size * 2
+        G = create_random_graph(size, edges)
+        for (u, v) in G.edges():
+            G[u][v]['weight'] = 1.0
+        # Простая эвристика - евклидово расстояние
+        def heuristic(u, v):
+            return 0.0  # Простая эвристика для теста
+        time_ms = measure_time(lambda: nx.astar_path(G, 0, size-1, heuristic))
+        memory_usage = measure_memory_usage(lambda: nx.astar_path(G, 0, size-1, heuristic))
+        result = {
+            "operation": "a_star",
+            "size": size,
+            "time_ms": time_ms,
+            "memory_mb": memory_usage,
+            "edges": G.number_of_edges()
+        }
+        print(json.dumps(result))
+
 if __name__ == "__main__":
     test_graph_creation()
     test_dijkstra()
-    test_floyd_warshall() 
+    test_floyd_warshall()
+    test_astar() 

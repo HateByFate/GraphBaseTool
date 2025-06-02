@@ -98,6 +98,10 @@ add_executable(performance_test benchmarks/performance_test.cpp)
 target_link_libraries(performance_test PRIVATE GraphBaseTool)
 target_include_directories(performance_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
+if(WIN32)
+    target_link_libraries(performance_test PRIVATE psapi)
+endif()
+
 # Добавляем бенчмарк для Boost
 add_executable(boost_benchmark benchmarks/boost_benchmark.cpp)
 target_link_libraries(boost_benchmark PRIVATE GraphBaseTool)

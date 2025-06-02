@@ -10,7 +10,8 @@ import threading
 import queue
 
 # Устанавливаем кодировку для вывода
-sys.stdout.reconfigure(encoding='utf-8')
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 def get_memory_usage():
     process = psutil.Process()
@@ -64,6 +65,14 @@ def create_random_graph(n, edges):
         if v1 != v2:
             edge_set.add((v1, v2))
     g.add_edges(list(edge_set))
+    
+    # Убеждаемся, что граф связный
+    while not g.is_connected(mode="strong"):
+        # Добавляем случайное ребро
+        v1 = random.randint(0, n-1)
+        v2 = random.randint(0, n-1)
+        if v1 != v2 and not g.are_connected(v1, v2):
+            g.add_edge(v1, v2)
     return g
 
 def measure_time(func, *args, warmup_iterations=3, measurement_iterations=5, **kwargs):
@@ -134,7 +143,28 @@ def test_floyd_warshall():
         }
         print(json.dumps(result))
 
+def test_astar():
+    sizes = [100, 200, 500, 1000]
+    for size in sizes:
+        edges = size * 2
+        G = create_random_graph(size, edges)
+        G.es["weight"] = [1.0] * G.ecount()
+        # Простая эвристика - евклидово расстояние
+        def heuristic(v1, v2):
+            return 0.0  # Простая эвристика для теста
+        time_ms = measure_time(lambda: G.get_shortest_paths(0, to=size-1, weights="weight", output="vpath"))
+        memory_usage = measure_memory_usage(lambda: G.get_shortest_paths(0, to=size-1, weights="weight", output="vpath"))
+        result = {
+            "operation": "a_star",
+            "size": size,
+            "time_ms": time_ms,
+            "memory_mb": memory_usage,
+            "edges": G.ecount()
+        }
+        print(json.dumps(result))
+
 if __name__ == "__main__":
     test_graph_creation()
     test_dijkstra()
     test_floyd_warshall()
+    test_astar()

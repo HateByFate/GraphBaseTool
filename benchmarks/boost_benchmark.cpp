@@ -15,6 +15,7 @@
 #include <boost/graph/graph_traits.hpp>
 #include <boost/graph/properties.hpp>
 #include <boost/property_map/property_map.hpp>
+#include <boost/graph/astar_search.hpp>
 #include <atomic>
 #include <thread>
 
@@ -231,6 +232,48 @@ void test_floyd_warshall(int num_vertices, int num_edges) {
          << ", \"edges\": " << num_edges << "}" << endl;
 }
 
+// Эвристика для A*
+struct zero_heuristic : public boost::astar_heuristic<Graph, double> {
+    double operator()(Graph::vertex_descriptor) const {
+        return 0.0;
+    }
+};
+
+// Тест алгоритма A*
+void test_astar(int num_vertices, int num_edges) {
+    Graph g;
+    create_random_graph(g, num_vertices, num_edges);
+    std::vector<double> distances(num_vertices);
+    std::vector<graph_traits<Graph>::vertex_descriptor> predecessors(num_vertices);
+    
+    double time_ms = measure_time([&]() {
+        try {
+            astar_search(g, 0, zero_heuristic(),
+                predecessor_map(make_iterator_property_map(predecessors.begin(), get(vertex_index, g)))
+                .distance_map(make_iterator_property_map(distances.begin(), get(vertex_index, g)))
+                .visitor(astar_visitor<null_visitor>()));
+        } catch (const std::exception& e) {
+            return;
+        }
+    });
+    
+    double memory_usage = measure_memory_usage([&]() {
+        try {
+            astar_search(g, 0, zero_heuristic(),
+                predecessor_map(make_iterator_property_map(predecessors.begin(), get(vertex_index, g)))
+                .distance_map(make_iterator_property_map(distances.begin(), get(vertex_index, g)))
+                .visitor(astar_visitor<null_visitor>()));
+        } catch (const std::exception& e) {
+            return;
+        }
+    });
+    
+    cout << "{\"operation\": \"a_star\", \"size\": " << num_vertices
+         << ", \"time_ms\": " << time_ms
+         << ", \"memory_mb\": " << memory_usage
+         << ", \"edges\": " << num_edges << "}" << endl;
+}
+
 int main() {
     setup_console();
     // Тестируем разные размеры графов
@@ -245,6 +288,7 @@ int main() {
         test_graph_creation(vertices, edges);
         test_dijkstra(vertices, edges);
         test_floyd_warshall(vertices, edges);
+        test_astar(vertices, edges);
     }
     return 0;
 } 

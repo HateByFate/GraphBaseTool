@@ -15,6 +15,8 @@
 
 namespace routing {
 
+using json = nlohmann::json;
+
 // Хеш-функция для пар вершин
 struct VertexPairHash {
     size_t operator()(const std::pair<size_t, size_t>& p) const {
@@ -116,9 +118,15 @@ public:
 
 private:
     // Оптимизированная структура хранения графа
+    struct InternalEdge {
+        size_t to;
+        double weight;
+    };
+
     struct Vertex {
-        std::unordered_map<size_t, Edge> edges;
+        std::vector<InternalEdge> edges;
         size_t degree = 0;
+        std::vector<bool> adjacency_mask;  // Быстрая проверка наличия рёбер
     };
     
     std::vector<Vertex> vertices_;
@@ -130,8 +138,8 @@ private:
         double distance;
         std::chrono::steady_clock::time_point last_access;
     };
-    mutable std::unordered_map<std::pair<size_t, size_t>, CacheEntry, VertexPairHash> distance_cache_;
-    mutable std::unordered_map<std::pair<size_t, size_t>, std::vector<size_t>, VertexPairHash> path_cache_;
+    mutable std::vector<std::vector<CacheEntry>> distance_cache_;
+    mutable std::vector<std::vector<std::vector<size_t>>> path_cache_;
     
     mutable GraphStats stats_;
     mutable std::vector<ProfilingResult> profiling_results_;
@@ -139,8 +147,9 @@ private:
     mutable size_t total_operations_ = 0;
     
     // Вспомогательные методы
-    void update_cache_entry(const std::pair<size_t, size_t>& key, double distance) const;
+    void update_cache_entry(size_t from, size_t to, double distance) const;
     void cleanup_cache() const;
+    void resize_adjacency_masks();
 };
 
 } // namespace routing 

@@ -1,4 +1,4 @@
-#include <GraphBaseTool/graph.hpp>
+#include "../include/GraphBaseTool/graph.hpp"
 #include <iostream>
 #include <chrono>
 #include <random>
@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <thread>
+#include <psapi.h>
 
 using namespace routing;
 using json = nlohmann::json;
@@ -148,6 +149,70 @@ json testMemoryProfile(Graph& graph) {
     };
 }
 
+// Функция для тестирования алгоритма Беллмана-Форда
+json testBellmanFord(Graph& graph, size_t startVertex) {
+    graph.reset_performance_stats();
+    auto result = graph.profile_operation("bellman_ford", [&]() -> std::pair<std::vector<double>, bool> {
+        return graph.bellman_ford(startVertex);
+    });
+    return {
+        {"operation", "bellman_ford"},
+        {"size", graph.vertex_count()},
+        {"edges", graph.edge_count()},
+        {"time_ms", std::chrono::duration<double, std::milli>(result.duration).count()},
+        {"memory_mb", result.memory_used / (1024.0 * 1024.0)}
+    };
+}
+
+// Функция для тестирования параллельного алгоритма Флойда-Уоршелла
+json testFloydWarshallParallel(Graph& graph, size_t num_threads) {
+    graph.reset_performance_stats();
+    auto result = graph.profile_operation("floyd_warshall_parallel", [&]() -> std::vector<std::vector<double>> {
+        return graph.floyd_warshall_parallel(num_threads);
+    });
+    return {
+        {"operation", "floyd_warshall_parallel"},
+        {"size", graph.vertex_count()},
+        {"edges", graph.edge_count()},
+        {"time_ms", std::chrono::duration<double, std::milli>(result.duration).count()},
+        {"memory_mb", result.memory_used / (1024.0 * 1024.0)},
+        {"threads", num_threads}
+    };
+}
+
+// Функция для тестирования оптимизированного алгоритма Дейкстры
+json testDijkstraOptimized(Graph& graph, size_t startVertex) {
+    graph.reset_performance_stats();
+    auto result = graph.profile_operation("dijkstra_optimized", [&]() -> std::vector<double> {
+        return graph.dijkstra_optimized(startVertex);
+    });
+    return {
+        {"operation", "dijkstra_optimized"},
+        {"size", graph.vertex_count()},
+        {"edges", graph.edge_count()},
+        {"time_ms", std::chrono::duration<double, std::milli>(result.duration).count()},
+        {"memory_mb", result.memory_used / (1024.0 * 1024.0)}
+    };
+}
+
+// Функция для тестирования оптимизированного алгоритма A*
+json testAStarOptimized(Graph& graph, size_t startVertex, size_t endVertex) {
+    graph.reset_performance_stats();
+    auto heuristic = [](size_t from, size_t to) {
+        return 0.0; // Простая эвристика для теста
+    };
+    auto result = graph.profile_operation("a_star_optimized", [&]() -> std::vector<size_t> {
+        return graph.a_star_optimized(startVertex, endVertex, heuristic);
+    });
+    return {
+        {"operation", "a_star_optimized"},
+        {"size", graph.vertex_count()},
+        {"edges", graph.edge_count()},
+        {"time_ms", std::chrono::duration<double, std::milli>(result.duration).count()},
+        {"memory_mb", result.memory_used / (1024.0 * 1024.0)}
+    };
+}
+
 template<typename Func>
 double measure_time(Func&& func) {
     auto start = std::chrono::high_resolution_clock::now();
@@ -272,6 +337,17 @@ int main() {
         }).dump() << std::endl;
         
         testGraph.reset_performance_stats();
+        auto bellman_ford_result = testBellmanFord(testGraph, 0);
+        std::cout << json({
+            {"library", "GraphBaseTool"},
+            {"operation", "bellman_ford"},
+            {"size", size},
+            {"edges", edges},
+            {"time_ms", bellman_ford_result["time_ms"]},
+            {"memory_mb", bellman_ford_result["memory_mb"]}
+        }).dump() << std::endl;
+        
+        testGraph.reset_performance_stats();
         auto floyd_result = testFloydWarshall(testGraph);
         std::cout << json({
             {"library", "GraphBaseTool"},
@@ -283,16 +359,37 @@ int main() {
         }).dump() << std::endl;
         
         testGraph.reset_performance_stats();
-        auto result_parallel_profile = testGraph.profile_operation("floyd_warshall_parallel", [&]() {
-            testGraph.floyd_warshall_parallel(4);
-        });
+        auto floyd_parallel_result = testFloydWarshallParallel(testGraph, 4);
         std::cout << json({
             {"library", "GraphBaseTool"},
             {"operation", "floyd_warshall_parallel"},
             {"size", size},
             {"edges", edges},
-            {"time_ms", std::chrono::duration<double, std::milli>(result_parallel_profile.duration).count()},
-            {"memory_mb", static_cast<double>(result_parallel_profile.memory_used) / (1024.0 * 1024.0)}
+            {"time_ms", floyd_parallel_result["time_ms"]},
+            {"memory_mb", floyd_parallel_result["memory_mb"]},
+            {"threads", floyd_parallel_result["threads"]}
+        }).dump() << std::endl;
+        
+        testGraph.reset_performance_stats();
+        auto dijkstra_optimized_result = testDijkstraOptimized(testGraph, 0);
+        std::cout << json({
+            {"library", "GraphBaseTool"},
+            {"operation", "dijkstra_optimized"},
+            {"size", size},
+            {"edges", edges},
+            {"time_ms", dijkstra_optimized_result["time_ms"]},
+            {"memory_mb", dijkstra_optimized_result["memory_mb"]}
+        }).dump() << std::endl;
+        
+        testGraph.reset_performance_stats();
+        auto astar_optimized_result = testAStarOptimized(testGraph, 0, size - 1);
+        std::cout << json({
+            {"library", "GraphBaseTool"},
+            {"operation", "a_star_optimized"},
+            {"size", size},
+            {"edges", edges},
+            {"time_ms", astar_optimized_result["time_ms"]},
+            {"memory_mb", astar_optimized_result["memory_mb"]}
         }).dump() << std::endl;
         
         testGraph.reset_performance_stats();
@@ -304,17 +401,6 @@ int main() {
             {"edges", edges},
             {"time_ms", negative_cycle_result["time_ms"]},
             {"memory_mb", negative_cycle_result["memory_mb"]}
-        }).dump() << std::endl;
-        
-        testGraph.reset_performance_stats();
-        auto memory_profile_result = testMemoryProfile(testGraph);
-        std::cout << json({
-            {"library", "GraphBaseTool"},
-            {"operation", "memory_profile"},
-            {"size", size},
-            {"edges", edges},
-            {"time_ms", memory_profile_result["time_ms"]},
-            {"memory_mb", memory_profile_result["memory_mb"]}
         }).dump() << std::endl;
     }
     
