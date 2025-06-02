@@ -1,0 +1,15 @@
+x64-windows/
+x64-windows/include/
+x64-windows/include/boost/
+x64-windows/include/boost/lambda2.hpp
+x64-windows/include/boost/lambda2/
+x64-windows/include/boost/lambda2/lambda2.hpp
+x64-windows/share/
+x64-windows/share/boost-lambda2/
+x64-windows/share/boost-lambda2/copyright
+x64-windows/share/boost-lambda2/vcpkg.spdx.json
+x64-windows/share/boost-lambda2/vcpkg_abi_info.txt
+x64-windows/share/boost_lambda2/
+x64-windows/share/boost_lambda2/boost_lambda2-config-version.cmake
+x64-windows/share/boost_lambda2/boost_lambda2-config.cmake
+x64-windows/share/boost_lambda2/boost_lambda2-targets.cmake

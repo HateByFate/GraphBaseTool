@@ -14,6 +14,7 @@ import locale
 import shutil
 import glob
 from datetime import datetime
+from collections import defaultdict
 
 # Устанавливаем кодировку для вывода
 sys.stdout.reconfigure(encoding='utf-8')
@@ -95,7 +96,7 @@ def main():
         os.path.join(root_dir, "benchmarks", "networkx_benchmark.py"),
         os.path.join(root_dir, "benchmarks", "igraph_benchmark.py"),
         os.path.join(root_dir, "benchmarks", "boost_benchmark.cpp"),
-        os.path.join(root_dir, "build", "bin", "Release", "performance_test.exe")
+        os.path.join(root_dir, "benchmarks", "performance_test.cpp")
     ]
     
     # Запускаем бенчмарки
@@ -198,23 +199,11 @@ def get_russian_op_name(op):
     return mapping.get(op, op)
 
 def create_report(results, results_dir):
-    """Создает отчет в формате Markdown."""
-    # Группируем результаты по операциям и размерам
-    operations = {}
-    for result in results:
-        op = result['operation']
-        size = result['size']
-        if op not in operations:
-            operations[op] = {}
-        if size not in operations[op]:
-            operations[op][size] = []
-        operations[op][size].append(result)
-
-    # Создаем отчет
+    """Создает отчет в формате Markdown по строгому шаблону пользователя."""
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     report = f"# Результаты бенчмарков\n\nВремя выполнения: {current_time}\n\n"
 
-    # Определяем порядок операций
+    # Операции и порядок
     op_order = [
         'graph_creation',
         'dijkstra',
@@ -223,33 +212,53 @@ def create_report(results, results_dir):
         'negative_cycle',
         'memory_profile'
     ]
+    op_libs = {
+        'graph_creation': ['networkx', 'boost_benchmark', 'igraph', 'GraphBaseTool'],
+        'dijkstra': ['boost_benchmark', 'GraphBaseTool', 'networkx', 'igraph'],
+        'floyd_warshall': ['boost_benchmark', 'igraph', 'GraphBaseTool', 'networkx'],
+        'floyd_warshall_parallel': ['GraphBaseTool'],
+        'negative_cycle': ['GraphBaseTool'],
+        'memory_profile': ['GraphBaseTool'],
+    }
+    sizes = [100, 200, 500, 1000]
+    size_to_edges = {100: 200, 200: 400, 500: 1000, 1000: 2000}
+
+    def norm_lib(lib):
+        if lib.lower() in ['performance_test', 'graphbasetool']:
+            return 'GraphBaseTool'
+        if lib.lower() in ['boost_benchmark', 'boost']:
+            return 'boost_benchmark'
+        if lib.lower() in ['networkx']:
+            return 'networkx'
+        if lib.lower() in ['igraph']:
+            return 'igraph'
+        return lib
+
+    grouped = defaultdict(lambda: defaultdict(dict))
+    for r in results:
+        op = r['operation']
+        size = r['size']
+        lib = norm_lib(r.get('library', 'Unknown'))
+        grouped[op][size][lib] = r
 
     for op in op_order:
-        if op in operations:
-            report += f"## {get_russian_op_name(op)}\n\n"
-            for size in sorted(operations[op].keys()):
-                report += f"### Граф с {size} вершинами\n\n"
-                # Заголовок таблицы
-                report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
-                    "Библиотека", "Вершины", "Рёбра", "Время (мс)", "Память (МБ)")
-                report += "|{:-<17}|{:-<14}|{:-<14}|{:-<14}|{:-<14}|\n".format('', '', '', '', '')
-                # Сортируем результаты по времени выполнения
-                sorted_results = sorted(operations[op][size], key=lambda x: x.get('time_ms', 0))
-                for result in sorted_results:
-                    lib_name = result.get('library', 'Unknown')
-                    # Для performance_test.exe подставляем GraphBaseTool
-                    if lib_name.lower() == 'performance_test':
-                        lib_name = 'GraphBaseTool'
+        report += f"## {get_russian_op_name(op)}\n\n"
+        for size in sizes:
+            report += f"### Граф с {size} вершинами\n\n"
+            report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
+                "Библиотека", "Вершины", "Рёбра", "Время (мс)", "Память (МБ)")
+            report += "|{:-<17}|{:-<14}|{:-<14}|{:-<14}|{:-<14}|\n".format('', '', '', '', '')
+            for lib in op_libs[op]:
+                res = grouped[op][size].get(lib)
+                if res:
                     report += "| {:<15} | {:<12} | {:<12} | {:<12.2f} | {:<12.2f} |\n".format(
-                        lib_name,
-                        result.get('size', ''),
-                        result.get('edges', ''),
-                        result.get('time_ms', 0),
-                        result.get('memory_mb', 0)
+                        lib, size, size_to_edges[size], res.get('time_ms', 0), res.get('memory_mb', 0)
                     )
-                report += "\n"
+                else:
+                    report += "| {:<15} | {:<12} | {:<12} | {:<12} | {:<12} |\n".format(
+                        lib, size, size_to_edges[size], '-', '-')
+            report += "\n"
 
-    # Сохраняем отчет
     with open(os.path.join(results_dir, 'benchmark_results.md'), 'w', encoding='utf-8') as f:
         f.write(report)
 

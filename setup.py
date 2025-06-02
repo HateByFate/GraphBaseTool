@@ -69,7 +69,15 @@ def check_vcpkg():
 def install_vcpkg():
     print_step("Установка vcpkg")
     
-    # Создаем директорию для vcpkg
+    # Проверяем, есть ли уже директория vcpkg в текущем проекте
+    local_vcpkg_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vcpkg")
+    if os.path.exists(local_vcpkg_dir):
+        print("Найдена локальная копия vcpkg, используем её")
+        os.environ['VCPKG_ROOT'] = local_vcpkg_dir
+        os.environ['PATH'] = f"{local_vcpkg_dir};{os.environ['PATH']}"
+        return True
+    
+    # Если локальной копии нет, создаем директорию для vcpkg
     vcpkg_dir = os.path.join(os.path.expanduser("~"), "vcpkg")
     if not os.path.exists(vcpkg_dir):
         os.makedirs(vcpkg_dir)
@@ -91,12 +99,18 @@ def install_vcpkg():
 def install_dependencies():
     print_step("Установка зависимостей")
     
+    # Получаем путь к vcpkg
+    vcpkg_root = os.environ.get('VCPKG_ROOT')
+    if not vcpkg_root:
+        print("VCPKG_ROOT не найден в переменных окружения")
+        return False
+    
     # Устанавливаем Boost
-    if not run_command("vcpkg install boost:x64-windows"):
+    if not run_command(f"{vcpkg_root}\\vcpkg.exe install boost:x64-windows"):
         return False
     
     # Интегрируем vcpkg с Visual Studio
-    if not run_command("vcpkg integrate install"):
+    if not run_command(f"{vcpkg_root}\\vcpkg.exe integrate install"):
         return False
     
     return True
@@ -281,6 +295,22 @@ def uninstall_project():
         current_dir = os.path.dirname(os.path.abspath(__file__))
         console.print(f"[blue]Текущая директория: {current_dir}[/blue]")
         
+        # Проверяем, есть ли суффикс -main в имени директории
+        dir_name = os.path.basename(current_dir).lower()
+        if dir_name.endswith('-main'):
+            console.print("[yellow]Обнаружен суффикс '-main' в имени директории. Это может быть причиной проблем с удалением.[/yellow]")
+            # Пробуем переименовать директорию, убрав суффикс
+            try:
+                new_dir = os.path.join(os.path.dirname(current_dir), dir_name[:-5])
+                if not os.path.exists(new_dir):
+                    os.rename(current_dir, new_dir)
+                    current_dir = new_dir
+                    console.print(f"[green]Директория успешно переименована в: {current_dir}[/green]")
+                else:
+                    console.print("[red]Не удалось переименовать директорию: целевая директория уже существует[/red]")
+            except Exception as e:
+                console.print(f"[red]Ошибка при переименовании директории: {str(e)}[/red]")
+        
         # Список файлов и папок для удаления (в порядке удаления)
         items_to_remove = [
             # Сначала удаляем сгенерированные файлы и папки
@@ -391,25 +421,61 @@ def uninstall_project():
                         progress.update(task, description=f"[green]Удаление {item}[/green]")
                         if os.path.isfile(item_path):
                             try:
-                                os.chmod(item_path, 0o777)  # Даем полные права на файл
-                                os.remove(item_path)
-                                progress.update(task, description=f"[green]Файл {item} удален[/green]")
+                                # Пробуем несколько раз удалить файл с разными правами доступа
+                                for attempt in range(3):
+                                    try:
+                                        os.chmod(item_path, 0o777)
+                                        os.remove(item_path)
+                                        progress.update(task, description=f"[green]Файл {item} удален[/green]")
+                                        break
+                                    except PermissionError:
+                                        if attempt < 2:  # Если это не последняя попытка
+                                            time.sleep(0.5)  # Ждем немного перед следующей попыткой
+                                        else:
+                                            raise
                             except PermissionError as pe:
-                                progress.update(task, description=f"[yellow]Нет прав доступа к {item}[/yellow]")
+                                progress.update(task, description=f"[yellow]Нет прав доступа к {item} после 3 попыток[/yellow]")
+                                console.print(f"[yellow]Детали ошибки: {str(pe)}[/yellow]")
                             except Exception as e:
                                 progress.update(task, description=f"[yellow]Ошибка при удалении {item}[/yellow]")
+                                console.print(f"[yellow]Детали ошибки: {str(e)}[/yellow]")
                         elif os.path.isdir(item_path):
                             try:
-                                shutil.rmtree(item_path, ignore_errors=True)
-                                progress.update(task, description=f"[green]Директория {item} удалена[/green]")
+                                # Пробуем несколько раз удалить директорию
+                                for attempt in range(3):
+                                    try:
+                                        # Даем полные права на все файлы в директории
+                                        for root, dirs, files in os.walk(item_path, topdown=False):
+                                            for name in files:
+                                                try:
+                                                    os.chmod(os.path.join(root, name), 0o777)
+                                                except:
+                                                    pass
+                                            for name in dirs:
+                                                try:
+                                                    os.chmod(os.path.join(root, name), 0o777)
+                                                except:
+                                                    pass
+                                        os.chmod(item_path, 0o777)
+                                        shutil.rmtree(item_path, ignore_errors=True)
+                                        progress.update(task, description=f"[green]Директория {item} удалена[/green]")
+                                        break
+                                    except PermissionError:
+                                        if attempt < 2:  # Если это не последняя попытка
+                                            time.sleep(0.5)  # Ждем немного перед следующей попыткой
+                                        else:
+                                            raise
                             except PermissionError as pe:
-                                progress.update(task, description=f"[yellow]Нет прав доступа к {item}[/yellow]")
+                                progress.update(task, description=f"[yellow]Нет прав доступа к {item} после 3 попыток[/yellow]")
+                                console.print(f"[yellow]Детали ошибки: {str(pe)}[/yellow]")
                             except Exception as e:
                                 progress.update(task, description=f"[yellow]Ошибка при удалении {item}[/yellow]")
+                                console.print(f"[yellow]Детали ошибки: {str(e)}[/yellow]")
                     else:
                         progress.update(task, description=f"[yellow]{item} не существует[/yellow]")
                 except Exception as e:
                     progress.update(task, description=f"[red]Ошибка при обработке {item}[/red]")
+                    console.print(f"[red]Детали ошибки: {str(e)}[/red]")
                 finally:
                     progress.update(task, advance=1)
                     time.sleep(0.1)  # Небольшая задержка для отображения прогресса
@@ -424,28 +490,39 @@ def uninstall_project():
             if 'graphbasetool' in dir_name:
                 console.print("[blue]Удаление корневой директории проекта...[/blue]")
                 try:
-                    # Даем полные права на директорию и все её содержимое
-                    for root, dirs, files in os.walk(project_dir, topdown=False):
-                        for name in files:
-                            try:
-                                os.chmod(os.path.join(root, name), 0o777)
-                            except:
-                                pass
-                        for name in dirs:
-                            try:
-                                os.chmod(os.path.join(root, name), 0o777)
-                            except:
-                                pass
-                    os.chmod(project_dir, 0o777)
-                    
-                    # Удаляем директорию и всё её содержимое
-                    shutil.rmtree(project_dir, ignore_errors=True)
-                    console.print("[green]Корневая директория проекта успешно удалена[/green]")
+                    # Пробуем несколько раз удалить корневую директорию
+                    for attempt in range(3):
+                        try:
+                            # Даем полные права на директорию и все её содержимое
+                            for root, dirs, files in os.walk(project_dir, topdown=False):
+                                for name in files:
+                                    try:
+                                        os.chmod(os.path.join(root, name), 0o777)
+                                    except:
+                                        pass
+                                for name in dirs:
+                                    try:
+                                        os.chmod(os.path.join(root, name), 0o777)
+                                    except:
+                                        pass
+                            os.chmod(project_dir, 0o777)
+                            
+                            # Удаляем директорию и всё её содержимое
+                            shutil.rmtree(project_dir, ignore_errors=True)
+                            console.print("[green]Корневая директория проекта успешно удалена[/green]")
+                            break
+                        except PermissionError:
+                            if attempt < 2:  # Если это не последняя попытка
+                                time.sleep(0.5)  # Ждем немного перед следующей попыткой
+                            else:
+                                raise
                 except Exception as e:
-                    console.print(f"[red]Ошибка при удалении корневой директории: {str(e)}[/red]")
+                    console.print(f"[red]Ошибка при удалении корневой директории после 3 попыток: {str(e)}[/red]")
+                    console.print("[yellow]Попробуйте удалить директорию вручную[/yellow]")
                 
         except Exception as e:
             console.print(f"[yellow]Предупреждение: Не удалось удалить корневую директорию: {str(e)}[/yellow]")
+            console.print("[yellow]Попробуйте удалить директорию вручную[/yellow]")
         
         console.print("[green]Удаление проекта завершено![/green]")
         time.sleep(1)

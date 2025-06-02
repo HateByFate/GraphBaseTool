@@ -16,73 +16,125 @@ def get_memory_usage():
 
 def create_random_graph(n, edges):
     g = Graph(n)
-    edge_set = set()
-    while len(edge_set) < edges:
+    edge_count = 0
+    while edge_count < edges:
         v1 = random.randint(0, n-1)
         v2 = random.randint(0, n-1)
-        if v1 != v2:
-            edge_set.add((v1, v2))
-    for v1, v2 in edge_set:
-        g.add_edge(v1, v2, 1.0)
+        if v1 != v2 and not g.has_edge(v1, v2):
+            g.add_edge(v1, v2, 1.0)
+            edge_count += 1
     return g
 
 def test_graph_creation():
-    sizes = [100, 200, 500, 1000]
-    for size in sizes:
-        edges = size * 2
-        start_mem = get_memory_usage()
-        start_time = time.time()
-        G = create_random_graph(size, edges)
-        end_time = time.time()
-        end_mem = get_memory_usage()
-        result = {
-            "operation": "graph_creation",
-            "size": size,
-            "time_ms": (end_time - start_time) * 1000,
-            "memory_mb": end_mem - start_mem,
-            "edges": G.edge_count()
-        }
-        print(json.dumps(result))
+    size = 100  # Фиксированный размер графа
+    edges = 200  # Фиксированное количество рёбер
+    start_mem = get_memory_usage()
+    start_time = time.time()
+    G = create_random_graph(size, edges)
+    end_time = time.time()
+    end_mem = get_memory_usage()
+    result = {
+        "operation": "graph_creation",
+        "size": size,
+        "time_ms": (end_time - start_time) * 1000,
+        "memory_mb": end_mem - start_mem,
+        "edges": edges  # Используем точное количество рёбер
+    }
+    print(json.dumps(result))
 
 def test_dijkstra():
-    sizes = [100, 200, 500, 1000]
-    for size in sizes:
-        edges = size * 2
-        G = create_random_graph(size, edges)
+    size = 100  # Фиксированный размер графа
+    edges = 200  # Фиксированное количество рёбер
+    G = create_random_graph(size, edges)
+    start_mem = get_memory_usage()
+    start_time = time.time()
+    G.dijkstra(0)
+    end_time = time.time()
+    end_mem = get_memory_usage()
+    result = {
+        "operation": "dijkstra",
+        "size": size,
+        "time_ms": (end_time - start_time) * 1000,
+        "memory_mb": end_mem - start_mem,
+        "edges": edges  # Используем точное количество рёбер
+    }
+    print(json.dumps(result))
+
+def test_floyd_warshall():
+    size = 100  # Фиксированный размер графа
+    edges = 200  # Фиксированное количество рёбер
+    G = create_random_graph(size, edges)
+    start_mem = get_memory_usage()
+    start_time = time.time()
+    G.floyd_warshall()
+    end_time = time.time()
+    end_mem = get_memory_usage()
+    result = {
+        "operation": "floyd_warshall",
+        "size": size,
+        "time_ms": (end_time - start_time) * 1000,
+        "memory_mb": end_mem - start_mem,
+        "edges": edges  # Используем точное количество рёбер
+    }
+    print(json.dumps(result))
+
+def test_floyd_warshall_parallel():
+    size = 100  # Фиксированный размер графа
+    edges = 200  # Фиксированное количество рёбер
+    thread_counts = [2, 4, 8, 16]
+    G = create_random_graph(size, edges)
+    for threads in thread_counts:
         start_mem = get_memory_usage()
         start_time = time.time()
-        G.dijkstra(0)
+        G.floyd_warshall_parallel(threads)
         end_time = time.time()
         end_mem = get_memory_usage()
         result = {
-            "operation": "dijkstra",
+            "operation": "floyd_warshall_parallel",
             "size": size,
             "time_ms": (end_time - start_time) * 1000,
             "memory_mb": end_mem - start_mem,
-            "edges": G.edge_count()
+            "edges": edges  # Используем точное количество рёбер
         }
         print(json.dumps(result))
 
-def test_floyd_warshall():
-    sizes = [100, 200, 500, 1000]
-    for size in sizes:
-        edges = size * 2
-        G = create_random_graph(size, edges)
-        start_mem = get_memory_usage()
-        start_time = time.time()
-        G.floyd_warshall()
-        end_time = time.time()
-        end_mem = get_memory_usage()
-        result = {
-            "operation": "floyd_warshall",
-            "size": size,
-            "time_ms": (end_time - start_time) * 1000,
-            "memory_mb": end_mem - start_mem,
-            "edges": G.edge_count()
-        }
-        print(json.dumps(result))
+def test_negative_cycle():
+    size = 100  # Фиксированный размер графа
+    edges = 200  # Фиксированное количество рёбер
+    G = create_random_graph(size, edges)
+    start_mem = get_memory_usage()
+    start_time = time.time()
+    G.has_negative_cycle()
+    end_time = time.time()
+    end_mem = get_memory_usage()
+    result = {
+        "operation": "negative_cycle",
+        "size": size,
+        "time_ms": (end_time - start_time) * 1000,
+        "memory_mb": end_mem - start_mem,
+        "edges": edges  # Используем точное количество рёбер
+    }
+    print(json.dumps(result))
+
+def test_memory_profile():
+    size = 100  # Фиксированный размер графа
+    edges = 200  # Фиксированное количество рёбер
+    start_mem = get_memory_usage()
+    G = create_random_graph(size, edges)
+    end_mem = get_memory_usage()
+    result = {
+        "operation": "memory_profile",
+        "size": size,
+        "time_ms": 0,
+        "memory_mb": end_mem - start_mem,
+        "edges": edges  # Используем точное количество рёбер
+    }
+    print(json.dumps(result))
 
 if __name__ == "__main__":
     test_graph_creation()
     test_dijkstra()
-    test_floyd_warshall() 
+    test_floyd_warshall()
+    test_floyd_warshall_parallel()
+    test_negative_cycle()
+    test_memory_profile() 

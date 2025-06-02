@@ -81,6 +81,7 @@ void test_graph_creation(int num_vertices, int num_edges) {
     double end_memory = get_memory_usage();
     double time_ms = std::chrono::duration<double, std::milli>(end - start).count();
     if (time_ms < 0.001) time_ms = 0.001;
+    
     cout << "{\"operation\": \"graph_creation\", \"size\": " << num_vertices
          << ", \"time_ms\": " << time_ms
          << ", \"memory_mb\": " << (end_memory - start_memory)
@@ -102,6 +103,7 @@ void test_dijkstra(int num_vertices, int num_edges) {
     double end_memory = get_memory_usage();
     double time_ms = std::chrono::duration<double, std::milli>(end - start).count();
     if (time_ms < 0.001) time_ms = 0.001;
+    
     cout << "{\"operation\": \"dijkstra\", \"size\": " << num_vertices
          << ", \"time_ms\": " << time_ms
          << ", \"memory_mb\": " << (end_memory - start_memory)
@@ -129,6 +131,7 @@ void test_floyd_warshall(int num_vertices, int num_edges) {
     double end_memory = get_memory_usage();
     double time_ms = std::chrono::duration<double, std::milli>(end - start).count();
     if (time_ms < 0.001) time_ms = 0.001;
+    
     cout << "{\"operation\": \"floyd_warshall\", \"size\": " << num_vertices
          << ", \"time_ms\": " << time_ms
          << ", \"memory_mb\": " << (end_memory - start_memory)
@@ -138,12 +141,17 @@ void test_floyd_warshall(int num_vertices, int num_edges) {
 int main() {
     setup_console();
     // Тестируем разные размеры графов
-    std::vector<int> sizes = {100, 200, 500, 1000};
-    for (int size : sizes) {
-        int edges = size * 2; // Количество рёбер = 2 * количество вершин
-        test_graph_creation(size, edges);
-        test_dijkstra(size, edges);
-        test_floyd_warshall(size, edges);
+    std::vector<std::pair<int, int>> test_cases = {
+        {100, 1000},    // 100 вершин, 1000 рёбер
+        {200, 4000},    // 200 вершин, 4000 рёбер
+        {500, 25000},   // 500 вершин, 25000 рёбер
+        {1000, 100000}  // 1000 вершин, 100000 рёбер
+    };
+    
+    for (const auto& [vertices, edges] : test_cases) {
+        test_graph_creation(vertices, edges);
+        test_dijkstra(vertices, edges);
+        test_floyd_warshall(vertices, edges);
     }
     return 0;
 } 
